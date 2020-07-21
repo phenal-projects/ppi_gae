@@ -2,6 +2,7 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report
 import xgboost as xgb
+from imblearn.over_sampling import ADASYN
 
 
 def class_test(embeddings, labels, val_set=None):
@@ -42,16 +43,16 @@ def class_test(embeddings, labels, val_set=None):
         val_data, val_labels, test_size=0.5, random_state=42
     )
 
+    ada = ADASYN(random_state=42)
     # binary model for each class in labels
     preds = []
     for col in range(labels.shape[1]):
+        x, y = ada.fit_resample(train_data, train_labels[:, col])
         model = xgb.XGBClassifier(
-            objective="binary:logistic",
-            scale_pos_weight=1 / np.mean(train_labels[:, col]) - 1,
-            nthread=11,
+            objective="binary:logistic", nthread=11,
         ).fit(
-            train_data,
-            train_labels[:, col],
+            x,
+            y,
             eval_set=[(val_data, val_labels[:, col])],
             eval_metric="auc",
             early_stopping_rounds=5,

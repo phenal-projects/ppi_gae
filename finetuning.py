@@ -2,6 +2,7 @@ from sys import argv
 import argparse
 
 import numpy as np
+import pandas as pd
 import torch
 import torch.optim as opt
 import torch.nn as nn
@@ -51,7 +52,12 @@ parser.add_argument("epochs", type=int, help="the number of epochs to train")
 parser.add_argument(
     "cut", type=float, help="the threshold for cutting weak edges"
 )
-parser.add_argument("target", type=str, help="a column in ids file to be used as a target")
+parser.add_argument(
+    "target", type=str, help="a column in ids file to be used as a target"
+)
+parser.add_argument(
+    "tissue", type=str, help="column with expression in feats file"
+)
 parser.add_argument("device", type=str, help="cuda or cpu")
 
 # Paths
@@ -69,6 +75,11 @@ args = parser.parse_args(argv[1:])
 full_graph = data.graph_data(
     args.edges, args.feats, args.ids, cut=args.cut, sparse_tensor=False
 )
+expression = pd.read_csv(args.feats, sep="\t")
+if args.tissue in expression.columns:
+    full_graph = data.tissue_specific_ppi(
+        full_graph, torch.tensor(expression[args.tissue].values.squeeze())
+    )
 target = data.labels_data(args.ids, [args.target])
 full_graph.y = torch.tensor(
     target[full_graph["id"]].squeeze(), dtype=torch.long
@@ -117,7 +128,7 @@ for param in model.parameters():
 for param in model.lin.parameters():
     param.requires_grad = True
 
-optimizer = opt.AdamW(model.parameters(), 0.005)
+optimizer = opt.AdamW(model.parameters(), 0.005, amsgrad=True)
 scheduler = opt.lr_scheduler.ReduceLROnPlateau(
     optimizer, factor=0.5, patience=20, verbose=True
 )
@@ -129,12 +140,19 @@ model = gae.finetune_gae(
 # unfreeze
 for param in model.parameters():
     param.requires_grad = True
-optimizer = opt.AdamW(model.parameters(), args.lr)
+optimizer = opt.AdamW(model.parameters(), args.lr, amsgrad=True)
 scheduler = opt.lr_scheduler.ReduceLROnPlateau(
     optimizer, factor=0.5, patience=20, verbose=True
 )
 model = gae.finetune_gae(
-    model, graphs, loss_fn, optimizer, scheduler, args.device, args.epochs, callback
+    model,
+    graphs,
+    loss_fn,
+    optimizer,
+    scheduler,
+    args.device,
+    args.epochs,
+    callback,
 )
 torch.save(model, "./finetuned_model.pt")
 

@@ -43,6 +43,7 @@ parser.add_argument("dim", type=int, help="the size of embeddings")
 parser.add_argument(
     "tissue", type=str, help="column with expression in feats file"
 )
+parser.add_argument("device", type=str, help="cuda or cpu")
 
 # Paths
 parser.add_argument("edges", type=str, help="a path to the edge list (tsv)")
@@ -59,7 +60,9 @@ full_graph = data.graph_data(
 )
 expression = pd.read_csv(args.feats, sep="\t")
 if args.tissue in expression.columns:
-    full_graph = data.tissue_specific_ppi(full_graph, torch.tensor(expression[args.tissue].values.squeeze()))
+    full_graph = data.tissue_specific_ppi(
+        full_graph, torch.tensor(expression[args.tissue].values.squeeze())
+    )
 loader = data.cluster_data(full_graph, 1, 1, shuffle=True, verbose=True)
 
 # make sparse tensors
@@ -83,13 +86,15 @@ for graph in loader:
 
 # model preparation
 model = gnn.GAE(gae.Encoder(62, args.dim))
-optimizer = opt.AdamW(model.parameters(), args.lr, weight_decay=args.wd)
+optimizer = opt.AdamW(
+    model.parameters(), args.lr, weight_decay=args.wd, amsgrad=True
+)
 scheduler = opt.lr_scheduler.ReduceLROnPlateau(
     optimizer, factor=0.5, patience=20, verbose=True
 )
 
 model = gae.train_gae(
-    model, graphs, optimizer, scheduler, "cuda", args.epochs, callback
+    model, graphs, optimizer, scheduler, args.device, args.epochs, callback
 )
 torch.save(model, "./model.pt")
 
@@ -97,7 +102,7 @@ torch.save(model, "./model.pt")
 embeddings = []
 ids = []
 for graph in graphs:
-    embeddings.append(gae.encode(model, graph, "cuda"))
+    embeddings.append(gae.encode(model, graph, args.device))
     ids.append(graph.id)
 ids = torch.cat(ids, 0)
 embeddings = np.concatenate(embeddings, 0)
