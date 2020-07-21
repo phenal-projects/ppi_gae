@@ -115,7 +115,7 @@ for param in model.parameters():
 for param in model.lin.parameters():
     param.requires_grad = True
 
-optimizer = opt.Adam(model.parameters(), 0.005)
+optimizer = opt.AdamW(model.parameters(), 0.005)
 scheduler = opt.lr_scheduler.ReduceLROnPlateau(
     optimizer, factor=0.5, patience=20, verbose=True
 )
@@ -127,7 +127,7 @@ model = gae.finetune_gae(
 # unfreeze
 for param in model.parameters():
     param.requires_grad = True
-optimizer = opt.Adam(model.parameters(), args.lr)
+optimizer = opt.AdamW(model.parameters(), args.lr)
 scheduler = opt.lr_scheduler.ReduceLROnPlateau(
     optimizer, factor=0.5, patience=20, verbose=True
 )

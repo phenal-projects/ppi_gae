@@ -2,6 +2,7 @@ from sys import argv
 import argparse
 
 import numpy as np
+import pandas as pd
 import torch
 import torch.optim as opt
 import torch_geometric.nn as gnn
@@ -39,6 +40,9 @@ parser.add_argument(
     "cut", type=float, help="the threshold for cutting weak edges"
 )
 parser.add_argument("dim", type=int, help="the size of embeddings")
+parser.add_argument(
+    "tissue", type=str, help="column with expression in feats file"
+)
 
 # Paths
 parser.add_argument("edges", type=str, help="a path to the edge list (tsv)")
@@ -53,6 +57,9 @@ args = parser.parse_args(argv[1:])
 full_graph = data.graph_data(
     args.edges, args.feats, args.ids, cut=args.cut, sparse_tensor=False
 )
+expression = pd.read_csv(args.feats, sep="\t")
+if args.tissue in expression.columns:
+    full_graph = data.tissue_specific_ppi(full_graph, expression[args.tissue])
 loader = data.cluster_data(full_graph, 1, 1, shuffle=True, verbose=True)
 
 # make sparse tensors
@@ -110,6 +117,7 @@ classes = [
     "Predicted secreted proteins",
     "Transcription factors",
     "Transporters",
+    "skin_integrity",
 ]
 
 print(class_test(embeddings, data.labels_data(args.ids, classes)))
