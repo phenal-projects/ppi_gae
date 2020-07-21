@@ -59,7 +59,7 @@ full_graph = data.graph_data(
 )
 expression = pd.read_csv(args.feats, sep="\t")
 if args.tissue in expression.columns:
-    full_graph = data.tissue_specific_ppi(full_graph, expression[args.tissue])
+    full_graph = data.tissue_specific_ppi(full_graph, torch.tensor(expression[args.tissue].values.squeeze()))
 loader = data.cluster_data(full_graph, 1, 1, shuffle=True, verbose=True)
 
 # make sparse tensors
@@ -89,7 +89,7 @@ scheduler = opt.lr_scheduler.ReduceLROnPlateau(
 )
 
 model = gae.train_gae(
-    model, graphs, optimizer, scheduler, "cpu", args.epochs, callback
+    model, graphs, optimizer, scheduler, "cuda", args.epochs, callback
 )
 torch.save(model, "./model.pt")
 
@@ -97,7 +97,7 @@ torch.save(model, "./model.pt")
 embeddings = []
 ids = []
 for graph in graphs:
-    embeddings.append(gae.encode(model, graph, "cpu"))
+    embeddings.append(gae.encode(model, graph, "cuda"))
     ids.append(graph.id)
 ids = torch.cat(ids, 0)
 embeddings = np.concatenate(embeddings, 0)

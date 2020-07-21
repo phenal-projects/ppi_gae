@@ -51,6 +51,8 @@ parser.add_argument("epochs", type=int, help="the number of epochs to train")
 parser.add_argument(
     "cut", type=float, help="the threshold for cutting weak edges"
 )
+parser.add_argument("target", type=str, help="a column in ids file to be used as a target")
+parser.add_argument("device", type=str, help="cuda or cpu")
 
 # Paths
 parser.add_argument("model", type=str, help="a path to a serialized model")
@@ -67,7 +69,7 @@ args = parser.parse_args(argv[1:])
 full_graph = data.graph_data(
     args.edges, args.feats, args.ids, cut=args.cut, sparse_tensor=False
 )
-target = data.labels_data(args.ids, ["FDA approved drug targets"])
+target = data.labels_data(args.ids, [args.target])
 full_graph.y = torch.tensor(
     target[full_graph["id"]].squeeze(), dtype=torch.long
 )
@@ -104,7 +106,7 @@ loss_fn = nn.CrossEntropyLoss(
         / np.unique(target, return_counts=True)[1]
         / np.sum(1 / np.unique(target, return_counts=True)[1]),
         dtype=torch.float32,
-        device=torch.device("cpu"),
+        device=torch.device(args.device),
     )
 )
 
@@ -120,7 +122,7 @@ scheduler = opt.lr_scheduler.ReduceLROnPlateau(
     optimizer, factor=0.5, patience=20, verbose=True
 )
 model = gae.finetune_gae(
-    model, graphs, loss_fn, optimizer, scheduler, "cpu", 200, callback
+    model, graphs, loss_fn, optimizer, scheduler, args.device, 200, callback
 )
 
 # finetune
@@ -132,7 +134,7 @@ scheduler = opt.lr_scheduler.ReduceLROnPlateau(
     optimizer, factor=0.5, patience=20, verbose=True
 )
 model = gae.finetune_gae(
-    model, graphs, loss_fn, optimizer, scheduler, "cpu", args.epochs, callback
+    model, graphs, loss_fn, optimizer, scheduler, args.device, args.epochs, callback
 )
 torch.save(model, "./finetuned_model.pt")
 
@@ -140,7 +142,7 @@ torch.save(model, "./finetuned_model.pt")
 embeddings = []
 ids = []
 for graph in graphs:
-    embeddings.append(gae.encode(mdl, graph, "cpu"))
+    embeddings.append(gae.encode(mdl, graph, args.device))
     ids.append(graph.id)
 ids = torch.cat(ids, 0)
 embeddings = np.concatenate(embeddings, 0)
