@@ -98,6 +98,7 @@ model = gae.train_gae(
 )
 torch.save(model, "./model.pt")
 
+model = torch.load("./best_model.pt")
 # encode
 embeddings = []
 ids = []

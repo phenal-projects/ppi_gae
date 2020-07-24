@@ -48,6 +48,7 @@ def callback(model, loss):
 # Parameters
 parser = argparse.ArgumentParser(description="Finetune pretrained model.")
 parser.add_argument("lr", type=float, help="learning rate")
+parser.add_argument("wd", type=float, help="weight decay")
 parser.add_argument("epochs", type=int, help="the number of epochs to train")
 parser.add_argument(
     "cut", type=float, help="the threshold for cutting weak edges"
@@ -128,7 +129,9 @@ for param in model.parameters():
 for param in model.lin.parameters():
     param.requires_grad = True
 
-optimizer = opt.AdamW(model.parameters(), 0.005, amsgrad=True)
+optimizer = opt.AdamW(
+    model.parameters(), 0.005, weight_decay=args.wd, amsgrad=True
+)
 scheduler = opt.lr_scheduler.ReduceLROnPlateau(
     optimizer, factor=0.5, patience=20, verbose=True
 )
@@ -140,7 +143,9 @@ model = gae.finetune_gae(
 # unfreeze
 for param in model.parameters():
     param.requires_grad = True
-optimizer = opt.AdamW(model.parameters(), args.lr, amsgrad=True)
+optimizer = opt.AdamW(
+    model.parameters(), args.lr, weight_decay=args.wd, amsgrad=True
+)
 scheduler = opt.lr_scheduler.ReduceLROnPlateau(
     optimizer, factor=0.5, patience=20, verbose=True
 )
@@ -156,6 +161,7 @@ model = gae.finetune_gae(
 )
 torch.save(model, "./finetuned_model.pt")
 
+model = torch.load("./best_finetuned_model.pt")
 # encode
 embeddings = []
 ids = []
