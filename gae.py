@@ -137,14 +137,14 @@ def finetune_gae(
 
             train_pos_adj = graph.adj_t.to(device)
             x = graph.x.to(device)
+            train_mask = torch.logical_and(
+                graph.train_nodes_mask, graph.expr_mask
+            )  # may cause problems when many batches
 
             model.train()
             optimizer.zero_grad()
             z = model(x, train_pos_adj)
-            loss = loss_fn(
-                z[graph.train_nodes_mask],
-                graph.y[graph.train_nodes_mask].to(device),
-            )
+            loss = loss_fn(z[train_mask], graph.y.to(device),)
             val_loss = loss_fn(
                 z[~graph.train_nodes_mask],
                 graph.y[~graph.train_nodes_mask].to(device),

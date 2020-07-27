@@ -41,7 +41,9 @@ parser.add_argument(
 )
 parser.add_argument("dim", type=int, help="the size of embeddings")
 parser.add_argument(
-    "tissue", type=str, help="column with expression in feats file"
+    "tissue",
+    type=int,
+    help="the number of a column with expression in feats file",
 )
 parser.add_argument("device", type=str, help="cuda or cpu")
 
@@ -59,9 +61,9 @@ full_graph = data.graph_data(
     args.edges, args.feats, args.ids, cut=args.cut, sparse_tensor=False
 )
 expression = pd.read_csv(args.feats, sep="\t")
-if args.tissue in expression.columns:
-    full_graph = data.tissue_specific_ppi(
-        full_graph, torch.tensor(expression[args.tissue].values.squeeze())
+if 0 < args.tissue:
+    full_graph = data.tissue_specific_ppi_cut(
+        full_graph, full_graph.x[:, args.tissue]
     )
 loader = data.cluster_data(full_graph, 1, 1, shuffle=True, verbose=True)
 

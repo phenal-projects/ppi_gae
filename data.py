@@ -5,6 +5,7 @@ from torch_geometric.data import Data, ClusterData, ClusterLoader
 from torch_geometric.utils import is_undirected
 from torch_geometric.transforms import ToSparseTensor
 from torch_sparse import SparseTensor
+import numpy as np
 
 
 def graph_data(
@@ -165,14 +166,12 @@ def make_sparse(data):
 
 def tissue_specific_ppi(data, expr_level):
     """Constructs tissue-specific PPI network via reweighting the edges.
-
     Parameters
     ----------
     data : torch_geometric.data.Data
         Graph data object.
     expr_level : torch.Tensor
         tensor with expression levels
-
     Returns
     -------
     torch_geometric.data.Data
@@ -184,4 +183,32 @@ def tissue_specific_ppi(data, expr_level):
     )
     data.edge_attr = data.edge_attr / data.edge_attr.max()
     data.edge_attr = data.edge_attr.reshape(-1, 1)
+    return data
+
+
+def tissue_specific_ppi_cut(data, expr_level, threshold=0.05):
+    """Constructs tissue-specific PPI network via removing proteins.
+
+    Parameters
+    ----------
+    data : torch_geometric.data.Data
+        Graph data object.
+    expr_level : torch.Tensor
+        tensor with expression levels
+    threshold : float, optional
+        cutting threshold
+
+    Returns
+    -------
+    torch_geometric.data.Data
+        New graph
+    """
+    row, col = data.edge_index
+    data.new_id = data.id[expr_level > threshold]
+    mask = torch.tensor(
+        np.logical_and(np.isin(row, data.new_id), np.isin(col, data.new_id))
+    )
+    data.edge_index = data.edge_index[:, mask]
+    data.edge_attr = data.edge_attr[mask]
+    data.expr_mask = mask
     return data

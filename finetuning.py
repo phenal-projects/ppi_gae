@@ -187,6 +187,7 @@ classes = [
     "Predicted secreted proteins",
     "Transcription factors",
     "Transporters",
+    "skin_integrity",
 ]
 
 # small information leakage here!
