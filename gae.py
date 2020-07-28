@@ -102,6 +102,8 @@ def finetune_gae(
 ):
     """Finetunes Graph Autoencoder
 
+    NEEDS REFACTORING! DOES NOT WORK YET!
+
     Parameters
     ----------
     model : torch_geometric.nn.GAE
@@ -128,6 +130,7 @@ def finetune_gae(
     torch_geometric.nn.GAE
         Trained model
     """
+    raise NotImplementedError
     model.to(device)
     losses = []
     val_losses = []
@@ -144,7 +147,7 @@ def finetune_gae(
             model.train()
             optimizer.zero_grad()
             z = model(x, train_pos_adj)
-            loss = loss_fn(z[train_mask], graph.y.to(device),)
+            loss = loss_fn(z[train_mask], graph.y[train_mask].to(device),)
             val_loss = loss_fn(
                 z[~graph.train_nodes_mask],
                 graph.y[~graph.train_nodes_mask].to(device),
