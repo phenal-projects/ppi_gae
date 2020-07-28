@@ -128,4 +128,9 @@ classes = [
     "skin_integrity",
 ]
 
-print(class_test(embeddings, data.labels_data(args.ids, classes)))
+print(
+    class_test(
+        embeddings[full_graph.new_id.numpy()],
+        data.labels_data(args.ids, classes)[full_graph.new_id.numpy()],
+    )
+)

@@ -31,7 +31,7 @@ def class_test(embeddings, labels, val_set=None):
     # train/val/test split
     if val_set is None:
         train_data, val_data, train_labels, val_labels = train_test_split(
-            train_data, labels, test_size=0.2, random_state=42
+            train_data, labels, test_size=0.4, random_state=42
         )
     else:
         val_mask = np.arange(labels.shape[0]).isin(val_set)

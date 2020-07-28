@@ -77,9 +77,9 @@ full_graph = data.graph_data(
     args.edges, args.feats, args.ids, cut=args.cut, sparse_tensor=False
 )
 expression = pd.read_csv(args.feats, sep="\t")
-if args.tissue in expression.columns:
-    full_graph = data.tissue_specific_ppi(
-        full_graph, torch.tensor(expression[args.tissue].values.squeeze())
+if 0 < args.tissue:
+    full_graph = data.tissue_specific_ppi_cut(
+        full_graph, full_graph.x[:, args.tissue]
     )
 target = data.labels_data(args.ids, [args.target])
 full_graph.y = torch.tensor(
@@ -191,4 +191,9 @@ classes = [
 ]
 
 # small information leakage here!
-print(class_test(embeddings, data.labels_data(args.ids, classes)))
+print(
+    class_test(
+        embeddings[full_graph.expr_mask.numpy()],
+        data.labels_data(args.ids, classes)[full_graph.expr_mask.numpy()],
+    )
+)

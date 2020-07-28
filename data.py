@@ -186,7 +186,7 @@ def tissue_specific_ppi(data, expr_level):
     return data
 
 
-def tissue_specific_ppi_cut(data, expr_level, threshold=0.05):
+def tissue_specific_ppi_cut(data, expr_level, threshold=0.0004):
     """Constructs tissue-specific PPI network via removing proteins.
 
     Parameters
