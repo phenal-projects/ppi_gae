@@ -5,7 +5,7 @@ import xgboost as xgb
 from imblearn.over_sampling import ADASYN
 
 
-def class_test(embeddings, labels, val_set=None, method="cr"):
+def class_test(embeddings, labels, val_mask=None, method="cr"):
 
     """Provides classification report with given embeddings and labels.
 
@@ -13,14 +13,12 @@ def class_test(embeddings, labels, val_set=None, method="cr"):
     ----------
     embeddings : np.ndarray
         An array with embeddings
-    labels_data : np.ndarray
+    labels : np.ndarray
         Array with with 'id' column and binary
         labels in each column. Ids must match the position of objects
         in the embeddings array.
-    classes : list of str
-        Columns in the labels_data to use
-        val_set (set of int, optional): Ids in the validation set.
-        Defaults to None.
+    val_mask : np.ndarray or None
+        Mask of the nodes in the validation set.
     method : str
         'auc' or 'cr' (classification report).
         Defaults to 'cr'.
@@ -32,12 +30,11 @@ def class_test(embeddings, labels, val_set=None, method="cr"):
     """
     train_data = embeddings
     # train/val/test split
-    if val_set is None:
+    if val_mask is None:
         train_data, val_data, train_labels, val_labels = train_test_split(
             train_data, labels, test_size=0.4, random_state=42
         )
     else:
-        val_mask = np.arange(labels.shape[0]).isin(val_set)
         val_data = train_data[val_mask]
         train_data = train_data[np.logical_not(val_mask)]
         val_labels = labels[val_mask]

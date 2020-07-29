@@ -130,7 +130,6 @@ def finetune_gae(
     torch_geometric.nn.GAE
         Trained model
     """
-    raise NotImplementedError
     model.to(device)
     losses = []
     val_losses = []
@@ -140,18 +139,21 @@ def finetune_gae(
 
             train_pos_adj = graph.adj_t.to(device)
             x = graph.x.to(device)
+
+            expr_mask = torch.zeros((len(graph.x),), dtype=torch.bool)
+            expr_mask[graph.new_id] = True
             train_mask = torch.logical_and(
-                graph.train_nodes_mask, graph.expr_mask
+                graph.train_nodes_mask, expr_mask
             )  # may cause problems when many batches
+            val_mask = torch.logical_and(
+                torch.logical_not(graph.train_nodes_mask), expr_mask
+            )
 
             model.train()
             optimizer.zero_grad()
             z = model(x, train_pos_adj)
             loss = loss_fn(z[train_mask], graph.y[train_mask].to(device),)
-            val_loss = loss_fn(
-                z[~graph.train_nodes_mask],
-                graph.y[~graph.train_nodes_mask].to(device),
-            )
+            val_loss = loss_fn(z[val_mask], graph.y[val_mask].to(device),)
             loss.backward()
             optimizer.step()
 

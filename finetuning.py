@@ -76,17 +76,24 @@ args = parser.parse_args(argv[1:])
 full_graph = data.graph_data(
     args.edges, args.feats, args.ids, cut=args.cut, sparse_tensor=False
 )
+
+ids = pd.read_csv(args.ids, sep="\t")
 expression = pd.read_csv(args.feats, sep="\t")
-if 0 < args.tissue:
+expression = ids[["id", "ensembl.gene"]].merge(
+    expression, left_on="ensembl.gene", right_on="Gene", how="left"
+)
+expression = expression.drop(["id", "ensembl.gene", "Gene"], 1).fillna(0)
+stds = expression.T.std()
+if args.tissue in expression.columns:
     full_graph = data.tissue_specific_ppi_cut(
-        full_graph, full_graph.x[:, args.tissue]
+        full_graph, expression[args.tissue] / stds
     )
 target = data.labels_data(args.ids, [args.target])
 full_graph.y = torch.tensor(
     target[full_graph["id"]].squeeze(), dtype=torch.long
 )
+full_graph.train_nodes_mask = torch.rand((full_graph.num_nodes,)) > 0.3
 loader = data.cluster_data(full_graph, 1, 1, shuffle=True, verbose=True)
-
 
 # make sparse tensors
 graphs = []
@@ -101,7 +108,6 @@ for graph in loader:
             )
         )
     )
-    graph.train_nodes_mask = torch.rand((graph.num_nodes,)) > 0.3
     graphs.append(
         data.make_sparse(
             train_test_split_edges(graph, val_ratio=0, test_ratio=0)
@@ -190,10 +196,23 @@ classes = [
     "skin_integrity",
 ]
 
-# small information leakage here!
 print(
     class_test(
-        embeddings[full_graph.expr_mask.numpy()],
-        data.labels_data(args.ids, classes)[full_graph.expr_mask.numpy()],
+        embeddings[full_graph.new_id.numpy()],
+        data.labels_data(args.ids, classes)[full_graph.new_id.numpy()],
+        val_mask=~full_graph.train_nodes_mask.numpy()[
+            full_graph.new_id.numpy()
+        ],
+        method="auc",
+    )
+)
+print(
+    class_test(
+        embeddings[full_graph.new_id.numpy()],
+        data.labels_data(args.ids, classes)[full_graph.new_id.numpy()],
+        val_mask=~full_graph.train_nodes_mask.numpy()[
+            full_graph.new_id.numpy()
+        ],
+        method="cr",
     )
 )
