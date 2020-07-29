@@ -41,9 +41,7 @@ parser.add_argument(
 )
 parser.add_argument("dim", type=int, help="the size of embeddings")
 parser.add_argument(
-    "tissue",
-    type=int,
-    help="the number of a column with expression in feats file",
+    "tissue", type=str, help="the column with expression in feats file",
 )
 parser.add_argument("device", type=str, help="cuda or cpu")
 
@@ -60,10 +58,17 @@ args = parser.parse_args(argv[1:])
 full_graph = data.graph_data(
     args.edges, args.feats, args.ids, cut=args.cut, sparse_tensor=False
 )
+
+ids = pd.read_csv(args.ids, sep="\t")
 expression = pd.read_csv(args.feats, sep="\t")
-if 0 < args.tissue:
+expression = ids[["id", "ensembl.gene"]].merge(
+    expression, left_on="ensembl.gene", right_on="Gene", how="left"
+)
+expression = expression.drop(["id", "ensembl.gene", "Gene"], 1).fillna(0)
+stds = expression.T.std()
+if args.tissue in expression.columns:
     full_graph = data.tissue_specific_ppi_cut(
-        full_graph, full_graph.x[:, args.tissue]
+        full_graph, expression[args.tissue] / stds
     )
 loader = data.cluster_data(full_graph, 1, 1, shuffle=True, verbose=True)
 
@@ -132,5 +137,6 @@ print(
     class_test(
         embeddings[full_graph.new_id.numpy()],
         data.labels_data(args.ids, classes)[full_graph.new_id.numpy()],
+        method="auc",
     )
 )

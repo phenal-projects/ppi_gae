@@ -1,11 +1,11 @@
 import numpy as np
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, roc_auc_score
 import xgboost as xgb
 from imblearn.over_sampling import ADASYN
 
 
-def class_test(embeddings, labels, val_set=None):
+def class_test(embeddings, labels, val_set=None, method="cr"):
 
     """Provides classification report with given embeddings and labels.
 
@@ -21,11 +21,14 @@ def class_test(embeddings, labels, val_set=None):
         Columns in the labels_data to use
         val_set (set of int, optional): Ids in the validation set.
         Defaults to None.
+    method : str
+        'auc' or 'cr' (classification report).
+        Defaults to 'cr'.
 
     Returns
     -------
     dict
-        Classification report.
+        Classification report / auc for every label
     """
     train_data = embeddings
     # train/val/test split
@@ -46,6 +49,7 @@ def class_test(embeddings, labels, val_set=None):
     ada = ADASYN(random_state=42)
     # binary model for each class in labels
     preds = []
+    probas = []
     for col in range(labels.shape[1]):
         x, y = ada.fit_resample(train_data, train_labels[:, col])
         model = xgb.XGBClassifier(
@@ -59,6 +63,16 @@ def class_test(embeddings, labels, val_set=None):
             verbose=False,
         )
         preds.append(model.predict(test_data))
-    return classification_report(
-        test_labels, np.stack(preds).T, zero_division=False, output_dict=True
-    )
+        probas.append(model.predict_proba(test_data)[:, 1])
+    if method == "cr":
+        return classification_report(
+            test_labels,
+            np.stack(preds).T,
+            zero_division=False,
+            output_dict=True,
+        )
+    if method == "auc":
+        res = dict()
+        for i, (y, y_probas) in enumerate(zip(test_labels.T, probas)):
+            res[i] = roc_auc_score(y, y_probas)
+        return res
