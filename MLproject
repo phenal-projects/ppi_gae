@@ -1,0 +1,33 @@
+name: ppi_gae
+
+conda_env: conda.yaml
+entry_points:
+    main:
+        parameters:
+            lr: {type: float, default: 0.005}
+            wd: {type: float, default: 0.01}
+            epochs: {type: int, default: 500}
+            edge_cut: {type: float, default: 0.01}
+            dim: {type: int, default: 32}
+            tissue: {type: string, default: 'none'}
+            device: {type: string, default: 'cpu'}
+            edges: path
+            ids: path
+            feats: path
+        command: |
+            python run.py {lr} {wd} {epochs} {edge_cut} {dim} {tissue} {device} {edges} {ids} {feats}
+    finetune:
+        parameters:
+            lr: {type: float, default: 0.005}
+            wd: {type: float, default: 0.01}
+            epochs: {type: int, default: 500}
+            edge_cut: {type: float, default: 0.01}
+            target: {type: string, default: 'skin_integrity'}
+            tissue: {type: string, default: 'none'}
+            device: {type: string, default: 'cpu'}
+            model: path
+            edges: path
+            ids: path
+            feats: path
+        command: |
+            python run.py {lr} {wd} {epochs} {edge_cut} {target} {tissue} {device} {model} {edges} {ids} {feats}

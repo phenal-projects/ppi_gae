@@ -4,3 +4,4 @@
 *.pyc
 *.csv
 *.tsv
+mlruns/0/67d3c0692f3b426e9de8455fd4fc9700/params/*
