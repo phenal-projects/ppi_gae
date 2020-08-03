@@ -12,6 +12,7 @@ import data
 import gae
 from eval import class_test
 
+
 best_auc = 0
 counter = 0
 
@@ -52,6 +53,7 @@ parser.add_argument(
     "feats", type=str, help="a path to the node features (tsv)"
 )
 
+
 args = parser.parse_args(argv[1:])
 
 # data loading
@@ -70,6 +72,8 @@ if args.tissue in expression.columns:
     full_graph = data.tissue_specific_ppi_cut(
         full_graph, expression[args.tissue] / stds
     )
+else:
+    full_graph.new_id = full_graph.id
 loader = data.cluster_data(full_graph, 1, 1, shuffle=True, verbose=True)
 
 # make sparse tensors

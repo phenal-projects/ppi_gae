@@ -1,3 +1,5 @@
+from sim_pu import prob_labels
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -152,7 +154,12 @@ def finetune_gae(
             model.train()
             optimizer.zero_grad()
             z = model(x, train_pos_adj)
-            loss = loss_fn(z[train_mask], graph.y[train_mask].to(device),)
+            loss = loss_fn(
+                z[train_mask],
+                prob_labels(graph.y[train_mask], graph.probs[train_mask]).to(
+                    device
+                ),
+            )
             val_loss = loss_fn(z[val_mask], graph.y[val_mask].to(device),)
             loss.backward()
             optimizer.step()

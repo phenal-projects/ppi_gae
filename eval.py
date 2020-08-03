@@ -4,8 +4,10 @@ from sklearn.metrics import classification_report, roc_auc_score
 import xgboost as xgb
 from imblearn.over_sampling import ADASYN
 
+import sim_pu
 
-def class_test(embeddings, labels, val_mask=None, method="cr"):
+
+def class_test(embeddings, labels, val_mask=None, method="cr", enrichment=0):
 
     """Provides classification report with given embeddings and labels.
 
@@ -22,11 +24,14 @@ def class_test(embeddings, labels, val_mask=None, method="cr"):
     method : str
         'auc' or 'cr' (classification report).
         Defaults to 'cr'.
+    enrichment : int
+        If greater then zero, stochasticly enriches positive class through KNN
+        similiarity. The value of the parameter is k for KNN.
 
     Returns
     -------
     dict
-        Classification report / auc for every label
+        Classification report / auc for every label.
     """
     train_data = embeddings
     # train/val/test split
@@ -43,12 +48,18 @@ def class_test(embeddings, labels, val_mask=None, method="cr"):
         val_data, val_labels, test_size=0.5, random_state=42
     )
 
-    ada = ADASYN(random_state=42)
+    resampler = ADASYN(random_state=42)
     # binary model for each class in labels
     preds = []
     probas = []
     for col in range(labels.shape[1]):
-        x, y = ada.fit_resample(train_data, train_labels[:, col])
+        cur_train_labels = train_labels[:, col]
+        if enrichment > 0:
+            cur_train_labels = sim_pu.prob_labels(
+                cur_train_labels,
+                sim_pu.knn_prob(train_data, cur_train_labels, enrichment),
+            )
+        x, y = resampler.fit_resample(train_data, cur_train_labels)
         model = xgb.XGBClassifier(
             objective="binary:logistic", nthread=11,
         ).fit(

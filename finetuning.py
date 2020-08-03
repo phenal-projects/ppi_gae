@@ -3,6 +3,8 @@ import argparse
 
 import numpy as np
 import pandas as pd
+from matplotlib import pyplot as plt
+
 import torch
 import torch.optim as opt
 import torch.nn as nn
@@ -10,6 +12,7 @@ from torch_geometric.utils import train_test_split_edges
 
 import data
 import gae
+import sim_pu
 from eval import class_test
 
 
@@ -88,6 +91,8 @@ if args.tissue in expression.columns:
     full_graph = data.tissue_specific_ppi_cut(
         full_graph, expression[args.tissue] / stds
     )
+else:
+    full_graph.new_id = full_graph.id
 target = data.labels_data(args.ids, [args.target])
 full_graph.y = torch.tensor(
     target[full_graph["id"]].squeeze(), dtype=torch.long
@@ -127,6 +132,29 @@ loss_fn = nn.CrossEntropyLoss(
         device=torch.device(args.device),
     )
 )
+
+# encode
+embeddings = []
+ids = []
+for graph in graphs:
+    embeddings.append(gae.encode(mdl, graph, args.device))
+    ids.append(graph.id)
+ids = torch.cat(ids, 0)
+embeddings = np.concatenate(embeddings, 0)
+embeddings = embeddings[ids.argsort().numpy()]
+np.save("./embedding_unsupervised.npy", embeddings)
+
+# probtagging
+ks, expc = sim_pu.elbow_curve(embeddings, target)
+plt.plot(ks, expc)
+plt.savefig("elbow_plot.png")
+print("What k should be used? (see elbow_plot.png)")
+
+k = int(input())
+probs = sim_pu.knn_prob(embeddings, target, k)
+for graph in graphs:
+    graph.probs = torch.tensor(probs[graph.id])
+# data leakage here
 
 # pretune linear layer
 # freeze all layers but the last linear one
@@ -177,7 +205,7 @@ for graph in graphs:
 ids = torch.cat(ids, 0)
 embeddings = np.concatenate(embeddings, 0)
 embeddings = embeddings[ids.argsort().numpy()]
-np.save("./embedding.npy", embeddings)
+np.save("./embedding_finetuned.npy", embeddings)
 
 # classification test
 classes = [
@@ -204,6 +232,7 @@ print(
             full_graph.new_id.numpy()
         ],
         method="auc",
+        enrichment=k,
     )
 )
 print(
@@ -214,5 +243,6 @@ print(
             full_graph.new_id.numpy()
         ],
         method="cr",
+        enrichment=k,
     )
 )
