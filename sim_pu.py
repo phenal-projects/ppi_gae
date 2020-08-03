@@ -4,11 +4,11 @@ from sklearn.neighbors import NearestNeighbors
 import torch
 
 
-def elbow_curve(X, y, step=250):
+def elbow_curve(X, y, step=500):
     """Prepares elbow curve for choosing the k parameter."""
     expected_ones = []
     ks = []
-    for k in range(10, len(y) // 4, step):
+    for k in range(500, len(y) // 4, step):
         ks.append(k)
         expected_ones.append(knn_prob(X, y, k).mean())
     return ks, expected_ones
