@@ -155,10 +155,18 @@ if args.k < 0:
     print("What k should be used? (see elbow_plot.png)")
 
     args.k = int(input())
-probs = sim_pu.knn_prob(embeddings, target, args.k)
+
+probs = full_graph.y.float()
+probs[full_graph.train_nodes_mask] = torch.tensor(
+    sim_pu.knn_prob(
+        embeddings[full_graph.train_nodes_mask],
+        target[full_graph.train_nodes_mask],
+        args.k,
+    ),
+    dtype=torch.float,
+)
 for graph in graphs:
     graph.probs = torch.tensor(probs[graph.id])
-# data leakage here
 
 # pretune linear layer
 # freeze all layers but the last linear one
