@@ -18,7 +18,7 @@ def knn_prob(X, y, k):
     """Returns a part of y=1 among the k nearest neighbors."""
     knn = NearestNeighbors(n_neighbors=k, n_jobs=24).fit(X)
     nbh = knn.kneighbors(return_distance=False)
-    return y[nbh, 0].mean(1)
+    return y.reshape(-1)[nbh].mean(1)
 
 
 def prob_labels(y, probs):
