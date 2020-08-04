@@ -23,5 +23,7 @@ def knn_prob(X, y, k):
 
 def prob_labels(y, probs):
     """Returns random labels according to probs. Leaves ones."""
+    y = torch.tensor(y)
+    probs = torch.tensor()
     thr = np.random.sample(len(probs))
     return torch.logical_or(probs > torch.tensor(thr), y).long()
