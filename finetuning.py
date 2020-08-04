@@ -187,37 +187,51 @@ model = gae.finetune_gae(
 
 # finetune
 # unfreeze
-for param in model.parameters():
-    param.requires_grad = True
-optimizer = opt.AdamW(
-    model.parameters(), args.lr, weight_decay=args.wd, amsgrad=True
-)
-scheduler = opt.lr_scheduler.ReduceLROnPlateau(
-    optimizer, factor=0.5, patience=20, verbose=True
-)
-model = gae.finetune_gae(
-    model,
-    graphs,
-    loss_fn,
-    optimizer,
-    scheduler,
-    args.device,
-    args.epochs,
-    callback,
-)
-torch.save(model, "./finetuned_model.pt")
+for era in range(20):
+    for param in model.parameters():
+        param.requires_grad = True
+    optimizer = opt.AdamW(
+        model.parameters(), args.lr, weight_decay=args.wd, amsgrad=True
+    )
+    scheduler = opt.lr_scheduler.ReduceLROnPlateau(
+        optimizer, factor=0.5, patience=20, verbose=True
+    )
+    model = gae.finetune_gae(
+        model,
+        graphs,
+        loss_fn,
+        optimizer,
+        scheduler,
+        args.device,
+        args.epochs // 20,
+        callback,
+    )
+    torch.save(model, "./finetuned_model.pt")
 
-model = torch.load("./best_finetuned_model.pt")
-# encode
-embeddings = []
-ids = []
-for graph in graphs:
-    embeddings.append(gae.encode(mdl, graph, args.device))
-    ids.append(graph.id)
-ids = torch.cat(ids, 0)
-embeddings = np.concatenate(embeddings, 0)
-embeddings = embeddings[ids.argsort().numpy()]
-np.save("./embedding_finetuned.npy", embeddings)
+    model = torch.load("./best_finetuned_model.pt")
+    # encode
+    embeddings = []
+    ids = []
+    for graph in graphs:
+        embeddings.append(gae.encode(mdl, graph, args.device))
+        ids.append(graph.id)
+    ids = torch.cat(ids, 0)
+    embeddings = np.concatenate(embeddings, 0)
+    embeddings = embeddings[ids.argsort().numpy()]
+    np.save("./embedding_finetuned.npy", embeddings)
+
+    # retagging
+    probs = full_graph.y.float()
+    probs[full_graph.train_nodes_mask] = torch.tensor(
+        sim_pu.knn_prob(
+            embeddings[full_graph.train_nodes_mask],
+            target[full_graph.train_nodes_mask],
+            args.k,
+        ),
+        dtype=torch.float,
+    )
+    for graph in graphs:
+        graph.probs = torch.tensor(probs[graph.id])
 
 # classification test
 classes = [
