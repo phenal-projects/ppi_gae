@@ -54,6 +54,9 @@ parser.add_argument("lr", type=float, help="learning rate")
 parser.add_argument("wd", type=float, help="weight decay")
 parser.add_argument("epochs", type=int, help="the number of epochs to train")
 parser.add_argument(
+    "k", type=int, help="the number of neighbors to enrich positive class"
+)
+parser.add_argument(
     "cut", type=float, help="the threshold for cutting weak edges"
 )
 parser.add_argument(
@@ -145,13 +148,14 @@ embeddings = embeddings[ids.argsort().numpy()]
 np.save("./embedding_unsupervised.npy", embeddings)
 
 # probtagging
-ks, expc = sim_pu.elbow_curve(embeddings, target)
-plt.plot(ks, expc)
-plt.savefig("elbow_plot.png")
-print("What k should be used? (see elbow_plot.png)")
+if args.k < 0:
+    ks, expc = sim_pu.elbow_curve(embeddings, target)
+    plt.plot(ks, expc)
+    plt.savefig("elbow_plot.png")
+    print("What k should be used? (see elbow_plot.png)")
 
-k = int(input())
-probs = sim_pu.knn_prob(embeddings, target, k)
+    args.k = int(input())
+probs = sim_pu.knn_prob(embeddings, target, args.k)
 for graph in graphs:
     graph.probs = torch.tensor(probs[graph.id])
 # data leakage here
@@ -232,7 +236,7 @@ print(
             full_graph.new_id.numpy()
         ],
         method="auc",
-        enrichment=k,
+        enrichment=args.k,
     )
 )
 print(
@@ -243,6 +247,6 @@ print(
             full_graph.new_id.numpy()
         ],
         method="cr",
-        enrichment=k,
+        enrichment=args.k,
     )
 )
