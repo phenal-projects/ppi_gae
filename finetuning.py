@@ -4,6 +4,8 @@ import argparse
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
+import mlflow
+import mlflow.pytorch
 
 import torch
 import torch.optim as opt
@@ -45,7 +47,7 @@ def callback(model, loss):
         counter = 0
         torch.save(model, "./best_finetuned_model.pt")
     counter += 1
-    print(loss)
+    mlflow.log_metric("loss", loss)
     if counter > 500:
         print("Stop!")
         return True
@@ -82,136 +84,75 @@ parser.add_argument(
 
 args = parser.parse_args(argv[1:])
 
-# data loading
-full_graph = data.graph_data(
-    args.edges, args.feats, args.ids, cut=args.cut, sparse_tensor=False
-)
-
-ids = pd.read_csv(args.ids, sep="\t")
-expression = pd.read_csv(args.feats, sep="\t")
-expression = ids[["id", "ensembl.gene"]].merge(
-    expression, left_on="ensembl.gene", right_on="Gene", how="left"
-)
-expression = expression.drop(["id", "ensembl.gene", "Gene"], 1).fillna(0)
-stds = expression.T.std()
-if args.tissue in expression.columns:
-    full_graph = data.tissue_specific_ppi_cut(
-        full_graph, expression[args.tissue] / stds
+with mlflow.start_run():
+    # logging
+    mlflow.log_param("lr", args.lr)
+    mlflow.log_param("wd", args.wd)
+    mlflow.log_param("k", args.k)
+    mlflow.log_param("cut", args.cut)
+    mlflow.log_param("dim", args.dim)
+    mlflow.log_param("target", args.target)
+    mlflow.log_param("tissue", args.tissue)
+    # data loading
+    full_graph = data.graph_data(
+        args.edges, args.feats, args.ids, cut=args.cut, sparse_tensor=False
     )
-else:
-    full_graph.new_id = full_graph.id
-target = data.labels_data(args.ids, [args.target])
-full_graph.y = torch.tensor(
-    target[full_graph["id"]].squeeze(), dtype=torch.long
-)
-full_graph.train_nodes_mask = torch.rand((full_graph.num_nodes,)) > 0.3
-loader = data.cluster_data(full_graph, 1, 1, shuffle=True, verbose=True)
 
-# make sparse tensors
-graphs = []
-for graph in loader:
-    graph.edge_id = dict(
-        list(
-            zip(
-                (graph.num_nodes * graph.edge_index[0] + graph.edge_index[1])
-                .numpy()
-                .squeeze(),
-                graph.edge_attr.squeeze().numpy(),
+    ids = pd.read_csv(args.ids, sep="\t")
+    expression = pd.read_csv(args.feats, sep="\t")
+    expression = ids[["id", "ensembl.gene"]].merge(
+        expression, left_on="ensembl.gene", right_on="Gene", how="left"
+    )
+    expression = expression.drop(["id", "ensembl.gene", "Gene"], 1).fillna(0)
+    stds = expression.T.std()
+    if args.tissue in expression.columns:
+        full_graph = data.tissue_specific_ppi_cut(
+            full_graph, expression[args.tissue] / stds
+        )
+    else:
+        full_graph.new_id = full_graph.id
+    target = data.labels_data(args.ids, [args.target])
+    full_graph.y = torch.tensor(
+        target[full_graph["id"]].squeeze(), dtype=torch.long
+    )
+    full_graph.train_nodes_mask = torch.rand((full_graph.num_nodes,)) > 0.3
+    loader = data.cluster_data(full_graph, 1, 1, shuffle=True, verbose=True)
+
+    # make sparse tensors
+    graphs = []
+    for graph in loader:
+        graph.edge_id = dict(
+            list(
+                zip(
+                    (
+                        graph.num_nodes * graph.edge_index[0]
+                        + graph.edge_index[1]
+                    )
+                    .numpy()
+                    .squeeze(),
+                    graph.edge_attr.squeeze().numpy(),
+                )
             )
         )
-    )
-    graphs.append(
-        data.make_sparse(
-            train_test_split_edges(graph, val_ratio=0, test_ratio=0)
+        graphs.append(
+            data.make_sparse(
+                train_test_split_edges(graph, val_ratio=0, test_ratio=0)
+            )
+        )
+
+    # model preparation
+    mdl = torch.load(args.model)
+    model = Classification(mdl.encoder, 2)
+    loss_fn = nn.CrossEntropyLoss(
+        weight=torch.tensor(
+            1
+            / np.unique(target, return_counts=True)[1]
+            / np.sum(1 / np.unique(target, return_counts=True)[1]),
+            dtype=torch.float32,
+            device=torch.device(args.device),
         )
     )
 
-# model preparation
-mdl = torch.load(args.model)
-model = Classification(mdl.encoder, 2)
-loss_fn = nn.CrossEntropyLoss(
-    weight=torch.tensor(
-        1
-        / np.unique(target, return_counts=True)[1]
-        / np.sum(1 / np.unique(target, return_counts=True)[1]),
-        dtype=torch.float32,
-        device=torch.device(args.device),
-    )
-)
-
-# encode
-embeddings = []
-ids = []
-for graph in graphs:
-    embeddings.append(gae.encode(mdl, graph, args.device))
-    ids.append(graph.id)
-ids = torch.cat(ids, 0)
-embeddings = np.concatenate(embeddings, 0)
-embeddings = embeddings[ids.argsort().numpy()]
-np.save("./embedding_unsupervised.npy", embeddings)
-
-# probtagging
-if args.k < 0:
-    ks, expc = sim_pu.elbow_curve(embeddings, target)
-    plt.plot(ks, expc)
-    plt.savefig("elbow_plot.png")
-    print("What k should be used? (see elbow_plot.png)")
-
-    args.k = int(input())
-
-probs = full_graph.y.float()
-probs[full_graph.train_nodes_mask] = torch.tensor(
-    sim_pu.knn_prob(
-        embeddings[full_graph.train_nodes_mask],
-        target[full_graph.train_nodes_mask],
-        args.k,
-    ),
-    dtype=torch.float,
-)
-for graph in graphs:
-    graph.probs = torch.tensor(probs[graph.id])
-
-# pretune linear layer
-# freeze all layers but the last linear one
-for param in model.parameters():
-    param.requires_grad = False
-for param in model.lin.parameters():
-    param.requires_grad = True
-
-optimizer = opt.AdamW(
-    model.parameters(), 0.005, weight_decay=args.wd, amsgrad=True
-)
-scheduler = opt.lr_scheduler.ReduceLROnPlateau(
-    optimizer, factor=0.5, patience=20, verbose=True
-)
-model = gae.finetune_gae(
-    model, graphs, loss_fn, optimizer, scheduler, args.device, 200, callback
-)
-
-# finetune
-# unfreeze
-for era in range(20):
-    for param in model.parameters():
-        param.requires_grad = True
-    optimizer = opt.AdamW(
-        model.parameters(), args.lr, weight_decay=args.wd, amsgrad=True
-    )
-    scheduler = opt.lr_scheduler.ReduceLROnPlateau(
-        optimizer, factor=0.5, patience=20, verbose=True
-    )
-    model = gae.finetune_gae(
-        model,
-        graphs,
-        loss_fn,
-        optimizer,
-        scheduler,
-        args.device,
-        args.epochs // 20,
-        callback,
-    )
-    torch.save(model, "./finetuned_model.pt")
-
-    model = torch.load("./best_finetuned_model.pt")
     # encode
     embeddings = []
     ids = []
@@ -221,9 +162,16 @@ for era in range(20):
     ids = torch.cat(ids, 0)
     embeddings = np.concatenate(embeddings, 0)
     embeddings = embeddings[ids.argsort().numpy()]
-    np.save("./embedding_finetuned.npy", embeddings)
+    np.save("./embedding_unsupervised.npy", embeddings)
+    # probtagging
+    if args.k < 0:
+        ks, expc = sim_pu.elbow_curve(embeddings, target)
+        plt.plot(ks, expc)
+        plt.savefig("elbow_plot.png")
+        print("What k should be used? (see elbow_plot.png)")
 
-    # retagging
+        args.k = int(input())
+
     probs = full_graph.y.float()
     probs[full_graph.train_nodes_mask] = torch.tensor(
         sim_pu.knn_prob(
@@ -236,25 +184,104 @@ for era in range(20):
     for graph in graphs:
         graph.probs = torch.tensor(probs[graph.id])
 
-# classification test
-classes = [
-    "Cancer-related genes",
-    "Disease related genes",
-    "Enzymes",
-    "FDA approved drug targets",
-    "G-protein coupled receptors",
-    "Plasma proteins",
-    "Potential drug targets",
-    "Predicted intracellular proteins",
-    "Predicted membrane proteins",
-    "Predicted secreted proteins",
-    "Transcription factors",
-    "Transporters",
-    "skin_integrity",
-]
+    # pretune linear layer
+    # freeze all layers but the last linear one
+    for param in model.parameters():
+        param.requires_grad = False
+    for param in model.lin.parameters():
+        param.requires_grad = True
 
-print(
-    class_test(
+    optimizer = opt.AdamW(
+        model.parameters(), 0.005, weight_decay=args.wd, amsgrad=True
+    )
+    scheduler = opt.lr_scheduler.ReduceLROnPlateau(
+        optimizer, factor=0.5, patience=20, verbose=True
+    )
+    model = gae.finetune_gae(
+        model,
+        graphs,
+        loss_fn,
+        optimizer,
+        scheduler,
+        args.device,
+        200,
+        callback,
+    )
+
+    # finetune
+    # unfreeze
+    for era in range(20):
+        for param in model.parameters():
+            param.requires_grad = True
+        optimizer = opt.AdamW(
+            model.parameters(), args.lr, weight_decay=args.wd, amsgrad=True
+        )
+        scheduler = opt.lr_scheduler.ReduceLROnPlateau(
+            optimizer, factor=0.5, patience=20, verbose=True
+        )
+        model = gae.finetune_gae(
+            model,
+            graphs,
+            loss_fn,
+            optimizer,
+            scheduler,
+            args.device,
+            args.epochs // 20,
+            callback,
+        )
+        torch.save(model, "./finetuned_model.pt")
+
+        model = torch.load("./best_finetuned_model.pt")
+        mlflow.pytorch.log_model(
+            model,
+            "unsupervised_model.pt",
+            conda_env="conda.yaml",
+            code_paths=["./"],
+        )
+
+        # encode
+        embeddings = []
+        ids = []
+        for graph in graphs:
+            embeddings.append(gae.encode(mdl, graph, args.device))
+            ids.append(graph.id)
+        ids = torch.cat(ids, 0)
+        embeddings = np.concatenate(embeddings, 0)
+        embeddings = embeddings[ids.argsort().numpy()]
+        np.save("./embedding_finetuned.npy", embeddings)
+        mlflow.log_artifact("./embedding_finetuned.npy")
+
+        # retagging
+        probs = full_graph.y.float()
+        probs[full_graph.train_nodes_mask] = torch.tensor(
+            sim_pu.knn_prob(
+                embeddings[full_graph.train_nodes_mask],
+                target[full_graph.train_nodes_mask],
+                args.k,
+            ),
+            dtype=torch.float,
+        )
+        for graph in graphs:
+            graph.probs = torch.tensor(probs[graph.id])
+
+    # classification test
+    classes = [
+        "Cancer-related genes",
+        "Disease related genes",
+        "Enzymes",
+        "FDA approved drug targets",
+        "G-protein coupled receptors",
+        "Plasma proteins",
+        "Potential drug targets",
+        "Predicted intracellular proteins",
+        "Predicted membrane proteins",
+        "Predicted secreted proteins",
+        "Transcription factors",
+        "Transporters",
+        "skin_integrity",
+    ]
+
+    classification_results = class_test(
         embeddings[full_graph.new_id.numpy()],
         data.labels_data(args.ids, classes)[full_graph.new_id.numpy()],
         val_mask=~full_graph.train_nodes_mask.numpy()[
@@ -263,15 +290,8 @@ print(
         method="auc",
         enrichment=args.k,
     )
-)
-print(
-    class_test(
-        embeddings[full_graph.new_id.numpy()],
-        data.labels_data(args.ids, classes)[full_graph.new_id.numpy()],
-        val_mask=~full_graph.train_nodes_mask.numpy()[
-            full_graph.new_id.numpy()
-        ],
-        method="cr",
-        enrichment=args.k,
-    )
-)
+    for key in classification_results:
+        auc = classification_results[key]["roc"]
+        ap = classification_results[key]["ap"]
+        mlflow.log_metric("embedding_auc", auc)
+        mlflow.log_metric("embedding_ap", ap)

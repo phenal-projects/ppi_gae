@@ -72,6 +72,7 @@ def train_gae(
     model.to(device)
     losses = []
     aucs = []
+    aps = []
     for epoch in range(epochs):
         for graph in loader:
 
@@ -90,19 +91,21 @@ def train_gae(
             model.eval()
             with torch.no_grad():
                 z = model.encode(x, train_pos_adj)
-                auc, _ = model.test(
+                auc, ap = model.test(
                     z,
                     graph.val_pos_edge_index.to(device),
                     graph.val_neg_edge_index.to(device),
                 )
             aucs.append(auc)
+            aps.append(ap)
 
-        mean_auc = sum(aucs[-len(loader) :]) / len(loader)
+        mean_auc = np.sum(aucs[-len(loader) :]) / len(loader)
+        mean_ap = np.sum(aps[-len(loader) :]) / len(loader)
         if scheduler is not None:
             scheduler.step(-mean_auc)
 
         if callback is not None:
-            if callback(model, mean_auc):
+            if callback(model, (mean_auc, mean_ap)):
                 return model
     return model
 
