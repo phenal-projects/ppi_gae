@@ -1,6 +1,7 @@
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, roc_auc_score
+from sklearn.metrics import average_precision_score
 import xgboost as xgb
 from imblearn.over_sampling import ADASYN
 
@@ -82,5 +83,8 @@ def class_test(embeddings, labels, val_mask=None, method="cr", enrichment=0):
     if method == "auc":
         res = dict()
         for i, (y, y_probas) in enumerate(zip(test_labels.T, probas)):
-            res[i] = roc_auc_score(y, y_probas)
+            res[i] = {
+                "roc": roc_auc_score(y, y_probas),
+                "ap": average_precision_score(y, y_probas),
+            }
         return res

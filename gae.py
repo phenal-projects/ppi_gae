@@ -1,9 +1,17 @@
+import numpy as np
+
 from sim_pu import prob_labels
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric import nn as gnn
+
+# deterministic behaviour
+torch.manual_seed(42)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+np.random.seed(42)
 
 
 class Encoder(nn.Module):

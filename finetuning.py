@@ -16,7 +16,11 @@ import sim_pu
 from eval import class_test
 
 
-torch.random.manual_seed(42)
+# deterministic behaviour
+torch.manual_seed(42)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+np.random.seed(42)
 
 
 class Classification(nn.Module):
@@ -121,7 +125,6 @@ for graph in loader:
             train_test_split_edges(graph, val_ratio=0, test_ratio=0)
         )
     )
-
 
 # model preparation
 mdl = torch.load(args.model)
