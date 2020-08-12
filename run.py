@@ -140,7 +140,9 @@ with mlflow.start_run():
     embeddings = np.concatenate(embeddings, 0)
     embeddings = embeddings[ids.argsort().numpy()]
     np.save("./embedding_unsupervised.npy", embeddings)
-    mlflow.log_artifact("./embedding_unsupervised.npy")
+    mlflow.log_artifact(
+        "./embedding_unsupervised.npy", "embedding_unsupervised.npy"
+    )
 
     # classification test
     classes = [

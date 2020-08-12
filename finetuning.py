@@ -81,7 +81,6 @@ parser.add_argument(
     "feats", type=str, help="a path to the node features (tsv)"
 )
 
-
 args = parser.parse_args(argv[1:])
 
 with mlflow.start_run():
