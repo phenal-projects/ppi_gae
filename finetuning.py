@@ -92,7 +92,6 @@ with mlflow.start_run():
     mlflow.log_param("wd", args.wd)
     mlflow.log_param("k", args.k)
     mlflow.log_param("cut", args.cut)
-    mlflow.log_param("dim", args.dim)
     mlflow.log_param("target", args.target)
     mlflow.log_param("tissue", args.tissue)
     # data loading
@@ -236,7 +235,7 @@ with mlflow.start_run():
         model = torch.load("./best_finetuned_model.pt")
         mlflow.pytorch.log_model(
             model,
-            "unsupervised_model.pt",
+            "finetuned_model.pt",
             conda_env="conda.yaml",
             code_paths=["./"],
         )
