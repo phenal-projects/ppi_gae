@@ -37,17 +37,20 @@ class Classification(nn.Module):
 
 best_loss = float("inf")
 counter = 0
+epoch_counter = 0
 
 
 def callback(model, loss):
     global best_loss
     global counter
+    global epoch_counter
     if best_loss > loss:
         best_loss = loss
         counter = 0
         torch.save(model, "./best_finetuned_model.pt")
     counter += 1
-    mlflow.log_metric("loss", loss)
+    mlflow.log_metric("loss", loss, step=epoch_counter)
+    epoch_counter += 1
     if counter > 500:
         print("Stop!")
         return True
@@ -294,5 +297,5 @@ with mlflow.start_run():
     for key in classification_results:
         auc = classification_results[key]["roc"]
         ap = classification_results[key]["ap"]
-        mlflow.log_metric("embedding_auc", auc)
-        mlflow.log_metric("embedding_ap", ap)
+        mlflow.log_metric("auc_" + classes[key], auc)
+        mlflow.log_metric("ap_" + classes[key], ap)

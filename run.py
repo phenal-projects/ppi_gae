@@ -18,19 +18,22 @@ from eval import class_test
 
 best_auc = 0
 counter = 0
+epoch_counter = 0
 
 
 def callback(model, auc_ap):
     global best_auc
     global counter
+    global epoch_counter
     auc, ap = auc_ap
     if best_auc < auc:
         best_auc = auc
         counter = 0
         torch.save(model, "./best_model.pt")
     counter += 1
-    mlflow.log_metric("ROC_AUC", auc)
-    mlflow.log_metric("AP", ap)
+    mlflow.log_metric("ROC_AUC", auc, step=epoch_counter)
+    mlflow.log_metric("AP", ap, step=epoch_counter)
+    epoch_counter += 1
     if counter > 500:
         print("Stop!")
         return True
@@ -148,9 +151,7 @@ with mlflow.start_run():
     embeddings = np.concatenate(embeddings, 0)
     embeddings = embeddings[ids.argsort().numpy()]
     np.save("./embedding_unsupervised.npy", embeddings)
-    mlflow.log_artifact(
-        "./embedding_unsupervised.npy", "embedding_unsupervised.npy"
-    )
+    mlflow.log_artifact("./embedding_unsupervised.npy")
 
     # classification test
     classes = [
@@ -177,5 +178,5 @@ with mlflow.start_run():
     for key in classification_results:
         auc = classification_results[key]["roc"]
         ap = classification_results[key]["ap"]
-        mlflow.log_metric("embedding_auc", auc)
-        mlflow.log_metric("embedding_ap", ap)
+        mlflow.log_metric("auc_" + classes[key], auc)
+        mlflow.log_metric("ap_" + classes[key], ap)
