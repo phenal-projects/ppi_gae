@@ -108,6 +108,11 @@ with mlflow.start_run():
                 train_test_split_edges(graph, val_ratio=0.3, test_ratio=0)
             )
         )
+    labels = data.labels_data(args.ids, ["skin_integrity"])[
+        full_graph.new_id.numpy()
+    ]
+    mlflow.log_param("nodes_left", full_graph.new_id.shape[0])
+    mlflow.log_param("total_support", np.sum(labels))
 
     # model preparation
     model = gnn.GAE(gae.Encoder(62, args.dim))
