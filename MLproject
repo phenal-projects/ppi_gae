@@ -22,7 +22,7 @@ entry_points:
             wd: {type: float, default: 0.01}
             epochs: {type: int, default: 500}
             edge_cut: {type: float, default: 0.01}
- 	    k: {type: int, default: 700}
+            k: {type: int, default: 700}
             target: {type: string, default: 'skin_integrity'}
             tissue: {type: string, default: 'none'}
             device: {type: string, default: 'cpu'}
