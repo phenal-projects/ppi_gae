@@ -83,6 +83,9 @@ parser.add_argument(
 
 args = parser.parse_args(argv[1:])
 
+tracking_uri = "http://localhost:12345"
+mlflow.set_tracking_uri(tracking_uri)
+
 with mlflow.start_run():
     # logging
     mlflow.log_param("lr", args.lr)
