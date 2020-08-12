@@ -22,6 +22,7 @@ entry_points:
             wd: {type: float, default: 0.01}
             epochs: {type: int, default: 500}
             edge_cut: {type: float, default: 0.01}
+ 	    k: {type: int, default: 700}
             target: {type: string, default: 'skin_integrity'}
             tissue: {type: string, default: 'none'}
             device: {type: string, default: 'cpu'}
@@ -30,4 +31,4 @@ entry_points:
             ids: path
             feats: path
         command: |
-            python run.py {lr} {wd} {epochs} {edge_cut} {target} {tissue} {device} {model} {edges} {ids} {feats}
+            python finetuning.py {lr} {wd} {epochs} {k} {edge_cut} {target} {tissue} {device} {model} {edges} {ids} {feats}
