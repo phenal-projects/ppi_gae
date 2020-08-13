@@ -260,7 +260,7 @@ with mlflow.start_run():
 
     # finetune
     # unfreeze
-    for era in range(20):
+    for era in range(5):
         for param in model.parameters():
             param.requires_grad = True
         optimizer = opt.AdamW(
