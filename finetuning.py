@@ -276,7 +276,7 @@ with mlflow.start_run():
             optimizer,
             scheduler,
             args.device,
-            args.epochs // 20,
+            args.epochs // 5,
             callback,
         )
         torch.save(model, "./finetuned_model.pt")
