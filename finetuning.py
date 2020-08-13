@@ -202,7 +202,7 @@ with mlflow.start_run():
     # logging
     log_args(args)
     # data loading
-    loader, target, full_graph = load_data()
+    loader, target, full_graph = load_data(args)
 
     # make sparse tensors
     graphs = construct_sparse(loader)
