@@ -71,7 +71,7 @@ def construct_parser():
         "target", type=str, help="a column in ids file to be used as a target"
     )
     parser.add_argument(
-        "tissue", type=str, help="column with expression in feats file"
+        "tissue", type=str, help="column with expression in expression file"
     )
     parser.add_argument("device", type=str, help="cuda or cpu")
     parser.add_argument("seed", type=int, help="random seed for repruduction")
@@ -111,7 +111,7 @@ def load_data(args):
     )
 
     ids = pd.read_csv(args.ids, sep="\t")
-    expression = pd.read_csv(args.feats, sep="\t")
+    expression = pd.read_csv(args.expression, sep="\t")
     expression = ids[["id", "ensembl.gene"]].merge(
         expression, left_on="ensembl.gene", right_on="Gene", how="left"
     )
