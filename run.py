@@ -222,7 +222,15 @@ with mlflow.start_run():
         method="auc",
     )
     for key in classification_results:
-        auc = classification_results[key]["roc"]
-        ap = classification_results[key]["ap"]
-        mlflow.log_metric("auc_" + classes[key], auc)
-        mlflow.log_metric("ap_" + classes[key], ap)
+        mlflow.log_metric(
+            "auc_" + classes[key], classification_results[key]["roc"]
+        )
+        mlflow.log_metric(
+            "ap_" + classes[key], classification_results[key]["ap"]
+        )
+        mlflow.log_metric(
+            "auc_pval_" + classes[key], classification_results[key]["roc_pval"]
+        )
+        mlflow.log_metric(
+            "ap_pval_" + classes[key], classification_results[key]["ap_pval"]
+        )

@@ -8,6 +8,24 @@ from imblearn.over_sampling import ADASYN
 import sim_pu
 
 
+def roc_shuffle(y_true, y_probas, base, rounds=1000):
+    """Returns single-sided p-value for a given base value"""
+    results = np.zeros(shape=rounds)
+    for i in range(rounds):
+        results[i] = roc_auc_score(y_true, np.random.permutation(y_probas))
+    return np.mean(base > results)
+
+
+def ap_shuffle(y_true, y_probas, base, rounds=1000):
+    """Returns single-sided p-value for a given base value"""
+    results = np.zeros(shape=rounds)
+    for i in range(rounds):
+        results[i] = average_precision_score(
+            y_true, np.random.permutation(y_probas)
+        )
+    return np.mean(base > results)
+
+
 def class_test(embeddings, labels, val_mask=None, method="cr", enrichment=0):
 
     """Provides classification report with given embeddings and labels.
@@ -83,8 +101,12 @@ def class_test(embeddings, labels, val_mask=None, method="cr", enrichment=0):
     if method == "auc":
         res = dict()
         for i, (y, y_probas) in enumerate(zip(test_labels.T, probas)):
+            u = roc_auc_score(y, y_probas)
+            v = average_precision_score(y, y_probas)
             res[i] = {
-                "roc": roc_auc_score(y, y_probas),
-                "ap": average_precision_score(y, y_probas),
+                "roc": u,
+                "ap": v,
+                "roc_pval": roc_shuffle(y, y_probas, u),
+                "ap_pval": ap_shuffle(y, y_probas, v),
             }
         return res
