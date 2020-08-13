@@ -11,11 +11,13 @@ entry_points:
             dim: {type: int, default: 32}
             tissue: {type: string, default: 'none'}
             device: {type: string, default: 'cpu'}
+            seed: {type: int, default: 42}
             edges: path
             ids: path
             feats: path
+            expr: path
         command: |
-            python run.py {lr} {wd} {epochs} {edge_cut} {dim} {tissue} {device} {edges} {ids} {feats}
+            python run.py {lr} {wd} {epochs} {edge_cut} {dim} {tissue} {device} {seed} {edges} {ids} {feats} {expr}
     finetune:
         parameters:
             lr: {type: float, default: 0.005}
@@ -26,9 +28,11 @@ entry_points:
             target: {type: string, default: 'skin_integrity'}
             tissue: {type: string, default: 'none'}
             device: {type: string, default: 'cpu'}
+            seed: {type: int, default: 42}
             model: path
             edges: path
             ids: path
             feats: path
+            expr: path
         command: |
-            python finetuning.py {lr} {wd} {epochs} {k} {edge_cut} {target} {tissue} {device} {model} {edges} {ids} {feats}
+            python finetuning.py {lr} {wd} {epochs} {k} {edge_cut} {target} {tissue} {device} {seed} {model} {edges} {ids} {feats} {expr}

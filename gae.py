@@ -115,8 +115,6 @@ def finetune_gae(
 ):
     """Finetunes Graph Autoencoder
 
-    NEEDS REFACTORING! DOES NOT WORK YET!
-
     Parameters
     ----------
     model : torch_geometric.nn.GAE

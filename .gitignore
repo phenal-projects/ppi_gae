@@ -5,3 +5,5 @@
 *.csv
 *.tsv
 mlruns/*
+.vscode/.ropeproject/objectdb
+.vscode/.ropeproject/config.py
