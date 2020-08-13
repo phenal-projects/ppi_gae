@@ -197,7 +197,6 @@ torch.backends.cudnn.benchmark = False
 np.random.seed(args.seed)
 
 mlflow.set_tracking_uri("http://localhost:12345")
-log_args(args)
 
 with mlflow.start_run():
     # logging
