@@ -20,7 +20,7 @@ entry_points:
             python run.py {lr} {wd} {epochs} {edge_cut} {dim} {tissue} {device} {seed} {edges} {ids} {feats} {expr}
     finetune:
         parameters:
-            lr: {type: float, default: 0.005}
+            lr: {type: float, default: 0.0004}
             wd: {type: float, default: 0.01}
             epochs: {type: int, default: 500}
             edge_cut: {type: float, default: 0.01}

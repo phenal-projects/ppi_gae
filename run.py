@@ -80,16 +80,6 @@ def construct_parser():
     return parser
 
 
-def log_args(args):
-    """Logs all necessary data"""
-    mlflow.log_param("lr", args.lr)
-    mlflow.log_param("wd", args.wd)
-    mlflow.log_param("cut", args.cut)
-    mlflow.log_param("dim", args.dim)
-    mlflow.log_param("tissue", args.tissue)
-    mlflow.log_param("seed", args.seed)
-
-
 def load_data(args):
     """Loads graph data and splits the graph into clusters"""
     full_graph = data.graph_data(
@@ -151,8 +141,6 @@ np.random.seed(args.seed)
 mlflow.set_tracking_uri("http://localhost:12345")
 
 with mlflow.start_run():
-    # logging
-    log_args(args)
     # data loading
     loader, full_graph = load_data(args)
 
