@@ -216,9 +216,3 @@ with mlflow.start_run():
         mlflow.log_metric(
             "ap_" + classes[key], classification_results[key]["ap"]
         )
-        mlflow.log_metric(
-            "auc_pval_" + classes[key], classification_results[key]["roc_pval"]
-        )
-        mlflow.log_metric(
-            "ap_pval_" + classes[key], classification_results[key]["ap_pval"]
-        )
