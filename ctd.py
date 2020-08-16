@@ -14,9 +14,7 @@ from torch_sparse import SparseTensor
 import mlflow
 import mlflow.pytorch
 
-import data
 import gae
-from eval import class_test
 
 
 BEST_AUC = 0
@@ -139,33 +137,3 @@ with mlflow.start_run():
     embeddings = gae.encode(model, full_graph, args.device)
     np.save("./embedding_unsupervised.npy", embeddings)
     mlflow.log_artifact("./embedding_unsupervised.npy")
-
-    # classification test
-    classes = [
-        "Cancer-related genes",
-        "Disease related genes",
-        "Enzymes",
-        "FDA approved drug targets",
-        "G-protein coupled receptors",
-        "Plasma proteins",
-        "Potential drug targets",
-        "Predicted intracellular proteins",
-        "Predicted membrane proteins",
-        "Predicted secreted proteins",
-        "Transcription factors",
-        "Transporters",
-        "skin_integrity",
-    ]
-
-    classification_results = class_test(
-        embeddings[full_graph.new_id.numpy()],
-        data.labels_data(args.ids, classes)[full_graph.new_id.numpy()],
-        method="auc",
-    )
-    for key in classification_results:
-        mlflow.log_metric(
-            "auc_" + classes[key], classification_results[key]["roc"]
-        )
-        mlflow.log_metric(
-            "ap_" + classes[key], classification_results[key]["ap"]
-        )
