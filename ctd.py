@@ -1,4 +1,4 @@
-"""Finetuning encoder with classification head"""
+"""CTD Gene-Disease GAE training"""
 from sys import argv
 import argparse
 
@@ -39,9 +39,6 @@ def construct_parser():
         "edges", type=str, help="a path to the edge list (npy)"
     )
     parser.add_argument(
-        "feats", type=str, help="a path to the node features (npy)"
-    )
-    parser.add_argument(
         "node_classes",
         type=str,
         help="a path to the expressions data file (npy)",
@@ -78,16 +75,13 @@ torch.backends.cudnn.benchmark = False
 np.random.seed(args.seed)
 
 edge_index = torch.LongTensor(np.load(args.edges))
-features = torch.FloatTensor(np.load(args.feats))
 node_classes = torch.LongTensor(np.load(args.node_classes))
-full_graph = gdata.Data(
-    x=features, edge_index=edge_index, node_classes=node_classes
-)
+full_graph = gdata.Data(edge_index=edge_index, node_classes=node_classes)
 full_graph.adj_t = SparseTensor(
     row=edge_index[0],
     col=edge_index[1],
     value=torch.ones(len(edge_index[1]), dtype=torch.float32),
-    sparse_sizes=(len(features), len(features)),
+    sparse_sizes=(len(node_classes), len(node_classes)),
     is_sorted=True,
 )
 
@@ -107,14 +101,14 @@ full_graph.val_neg_edge_index = negative_sampling(
 mlflow.set_tracking_uri("http://localhost:12345")
 
 with mlflow.start_run():
-    model = gnn.GAE(gae.Encoder(62, args.dim))
+    model = gnn.GAE(gae.CTDEncoder(62, args.dim))
     optimizer = opt.AdamW(
         model.parameters(), args.lr, weight_decay=args.wd, amsgrad=True
     )
     scheduler = opt.lr_scheduler.ReduceLROnPlateau(
         optimizer, factor=0.5, patience=20, verbose=True
     )
-    model = gae.train_gae(
+    model = gae.train_ctd_gae(
         model,
         [full_graph],
         optimizer,
@@ -134,6 +128,6 @@ with mlflow.start_run():
     )
 
     # encode
-    embeddings = gae.encode(model, full_graph, args.device)
+    embeddings = gae.encode_ctd(model, full_graph, args.device)
     np.save("./embedding_unsupervised.npy", embeddings)
     mlflow.log_artifact("./embedding_unsupervised.npy")

@@ -41,6 +41,36 @@ class Encoder(nn.Module):
         return torch.cat([self.conv3(x2, edge_index), x2, x1], -1)
 
 
+class CTDEncoder(nn.Module):
+    def __init__(self, in_channels, out_channels, nodes):
+        """Initializes the GCN encoder with encoded embeddings
+
+        Parameters
+        ----------
+        in_channels : int
+            The number of channels in the input graph nodes
+        out_channels : int
+            The number of dimensions in the embeddings
+        """
+        super(Encoder, self).__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels * 5
+        self.emb = nn.parameter.Parameter(
+            (nodes, in_channels), requires_grad=True
+        )
+        self.conv1 = gnn.GCNConv(in_channels, 2 * out_channels, cached=False)
+        self.conv2 = gnn.GCNConv(
+            2 * out_channels, 2 * out_channels, cached=False
+        )
+        self.conv3 = gnn.GCNConv(2 * out_channels, out_channels, cached=False)
+
+    def forward(self, edge_index):
+        """Calculates embeddings"""
+        x1 = F.relu(self.conv1(self.emb, edge_index))
+        x2 = F.relu(self.conv2(x1, edge_index))
+        return torch.cat([self.conv3(x2, edge_index), x2, x1], -1)
+
+
 def train_gae(
     model, loader, optimizer, scheduler, device, epochs, callback=None
 ):
@@ -192,4 +222,80 @@ def encode(model, graph, device):
     model = model.to(device)
     with torch.no_grad():
         z = model.encode(graph.x.to(device), graph.adj_t.to(device))
+    return z.cpu().numpy()
+
+
+def train_ctd_gae(
+    model, loader, optimizer, scheduler, device, epochs, callback=None
+):
+    """Trains CTD Graph Autoencoder
+
+    Parameters
+    ----------
+    model : torch_geometric.nn.GAE
+        GAE model to train
+    loader : any graph loader
+        Loader for GAE training. The graphs should contain sparse matrix!
+    optimizer : any optimizer
+        An optimizer for training
+    scheduler: torch.optim.lr_scheduler.ReduceLROnPlateau
+        Learning rate scheduler
+    device : str
+        Device string. The device will be used for training
+    epochs : int
+        A number of epochs to train
+    callback : callable, optional
+        A function that is called in the end of epochs, if returns true, the
+        training stops, by default None
+
+    Returns
+    -------
+    torch_geometric.nn.GAE
+        Trained model
+    """
+    model.to(device)
+    losses = []
+    aucs = []
+    aps = []
+    for epoch in range(epochs):
+        for graph in loader:
+
+            train_pos_adj = graph.adj_t.to(device)
+
+            model.train()
+            optimizer.zero_grad()
+            graph = graph
+            z = model.encode(train_pos_adj)
+            loss = model.recon_loss(z, graph.train_pos_edge_index.to(device))
+            loss.backward()
+            optimizer.step()
+            losses.append(loss.item())
+
+            model.eval()
+            with torch.no_grad():
+                z = model.encode(train_pos_adj)
+                auc, ap = model.test(
+                    z,
+                    graph.val_pos_edge_index.to(device),
+                    graph.val_neg_edge_index.to(device),
+                )
+            aucs.append(auc)
+            aps.append(ap)
+
+        mean_auc = np.sum(aucs[-len(loader) :]) / len(loader)
+        mean_ap = np.sum(aps[-len(loader) :]) / len(loader)
+        if scheduler is not None:
+            scheduler.step(-mean_auc)
+
+        if callback is not None:
+            if callback(model, (mean_auc, mean_ap)):
+                return model
+    return model
+
+
+def encode_ctd(model, graph, device):
+    """Encodes graph nodes with the given model"""
+    model = model.to(device)
+    with torch.no_grad():
+        z = model.encode(graph.adj_t.to(device))
     return z.cpu().numpy()
