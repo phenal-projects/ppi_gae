@@ -88,7 +88,6 @@ full_graph.adj_t = SparseTensor(
 # train test split edges
 genes = torch.arange(len(node_classes))[node_classes == 0]
 diseases = torch.arange(len(node_classes))[node_classes == 1]
-np.logicalnp.isin(edge_index, genes)
 full_graph.interclass_ei = edge_index[:]
 mask = torch.rand(edge_index.shape[1]) > 0.7
 full_graph.train_pos_edge_index = full_graph.edge_index[:, mask]
