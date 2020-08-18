@@ -100,7 +100,7 @@ full_graph.val_neg_edge_index = negative_sampling(
 mlflow.set_tracking_uri("http://localhost:12345")
 
 with mlflow.start_run():
-    model = gnn.GAE(gae.CTDEncoder(62, args.dim))
+    model = gnn.GAE(gae.CTDEncoder(62, args.dim, len(node_classes)))
     optimizer = opt.AdamW(
         model.parameters(), args.lr, weight_decay=args.wd, amsgrad=True
     )
