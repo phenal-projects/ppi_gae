@@ -52,7 +52,7 @@ class CTDEncoder(nn.Module):
         out_channels : int
             The number of dimensions in the embeddings
         """
-        super(Encoder, self).__init__()
+        super(CTDEncoder, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels * 5
         self.emb = nn.parameter.Parameter(
