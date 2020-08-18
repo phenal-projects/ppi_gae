@@ -56,13 +56,11 @@ class CTDEncoder(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels * 5
         self.emb = nn.parameter.Parameter(
-            (nodes, in_channels), requires_grad=True
+            torch.rand((nodes, in_channels)), requires_grad=True
         )
-        self.conv1 = gnn.GCNConv(in_channels, 2 * out_channels, cached=False)
-        self.conv2 = gnn.GCNConv(
-            2 * out_channels, 2 * out_channels, cached=False
-        )
-        self.conv3 = gnn.GCNConv(2 * out_channels, out_channels, cached=False)
+        self.conv1 = gnn.GATConv(in_channels, out_channels, heads=1)
+        self.conv2 = gnn.GATConv(out_channels, out_channels, heads=4)
+        self.conv3 = gnn.GATConv(4 * out_channels, out_channels, heads=1)
 
     def forward(self, edge_index):
         """Calculates embeddings"""
@@ -260,7 +258,7 @@ def train_ctd_gae(
     for epoch in range(epochs):
         for graph in loader:
 
-            train_pos_adj = graph.adj_t.to(device)
+            train_pos_adj = graph.train_adj_t.to(device)
 
             model.train()
             optimizer.zero_grad()

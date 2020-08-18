@@ -8,7 +8,10 @@ import torch
 import torch.optim as opt
 import torch_geometric.nn as gnn
 import torch_geometric.data as gdata
-from torch_geometric.utils import negative_sampling
+from torch_geometric.utils import (
+    train_test_split_edges,
+    add_remaining_self_loops,
+)
 from torch_sparse import SparseTensor
 
 import mlflow
@@ -77,24 +80,49 @@ np.random.seed(args.seed)
 edge_index = torch.LongTensor(np.load(args.edges))
 node_classes = torch.LongTensor(np.load(args.node_classes))
 full_graph = gdata.Data(edge_index=edge_index, node_classes=node_classes)
-full_graph.adj_t = SparseTensor(
-    row=edge_index[0],
-    col=edge_index[1],
-    value=torch.ones(len(edge_index[1]), dtype=torch.float32),
-    sparse_sizes=(len(node_classes), len(node_classes)),
-    is_sorted=True,
-)
 
 # train test split edges
 genes = torch.arange(len(node_classes))[node_classes == 0]
 diseases = torch.arange(len(node_classes))[node_classes == 1]
-full_graph.interclass_ei = edge_index[:]
-mask = torch.rand(edge_index.shape[1]) > 0.7
-full_graph.train_pos_edge_index = full_graph.edge_index[:, mask]
-full_graph.val_pos_edge_index = full_graph.edge_index[:, ~mask]
+interclass_mask = torch.BoolTensor(
+    np.logical_or(
+        np.isin(edge_index[0], diseases), np.isin(edge_index[1], diseases),
+    )
+)
+full_graph.interclass_ei = edge_index[:, interclass_mask]
+mask = torch.rand(full_graph.interclass_ei.shape[1]) > 0.7
+full_graph.train_pos_edge_index = add_remaining_self_loops(
+    torch.cat(
+        [
+            full_graph.interclass_ei[:, mask],
+            full_graph.interclass_ei[:, mask][[1, 0]],
+            full_graph.edge_index[:, ~interclass_mask],
+            full_graph.edge_index[:, ~interclass_mask][[1, 0]],
+        ],
+        1,
+    )
+)[0]
+full_graph.train_adj_t = SparseTensor(
+    row=full_graph.train_pos_edge_index[0],
+    col=full_graph.train_pos_edge_index[1],
+    value=torch.ones(
+        len(full_graph.train_pos_edge_index[1]), dtype=torch.float32
+    ),
+    sparse_sizes=(len(node_classes), len(node_classes)),
+)
+full_graph.val_pos_edge_index = add_remaining_self_loops(
+    torch.cat(
+        [
+            full_graph.interclass_ei[:, ~mask],
+            full_graph.interclass_ei[:, ~mask][[1, 0]],
+        ],
+        1,
+    )
+)[0]
 full_graph.val_neg_edge_index = negative_sampling(
-    full_graph.edge_index,
+    full_graph.interclass_ei,
     num_neg_samples=full_graph.val_pos_edge_index.shape[1],
+    force_undirected=True,
 )
 
 mlflow.set_tracking_uri("http://localhost:12345")
