@@ -94,7 +94,7 @@ full_graph.train_pos_edge_index = full_graph.edge_index[:, mask]
 full_graph.val_pos_edge_index = full_graph.edge_index[:, ~mask]
 full_graph.val_neg_edge_index = negative_sampling(
     full_graph.edge_index,
-    num_negative_sample=full_graph.val_pos_edge_index.shape[1],
+    num_neg_sample=full_graph.val_pos_edge_index.shape[1],
 )
 
 mlflow.set_tracking_uri("http://localhost:12345")
