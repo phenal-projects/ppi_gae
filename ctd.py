@@ -166,7 +166,7 @@ with mlflow.start_run():
             full_graph.val_neg_edge_index.to(args.device),
         )
     mlflow.log_metric("Final AUC", auc)
-    mlflow.log_metric("Final AP", auc)
+    mlflow.log_metric("Final AP", ap)
 
     # encode
     embeddings = gae.encode_ctd(model, full_graph, args.device)
