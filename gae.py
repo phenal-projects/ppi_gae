@@ -319,4 +319,4 @@ def encode_ctd(model, graph, device):
     model = model.to(device)
     with torch.no_grad():
         z = model.encode(graph.adj_t.to(device))
-    return z.cpu().numpy()
+    return z.detach().cpu().numpy()
