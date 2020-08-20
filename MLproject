@@ -39,7 +39,7 @@ entry_points:
     ctd:
         parameters:
             lr: {type: float, default: 0.005}
-            wd: {type: float, default: 0.01}
+            wd: {type: float, default: 0.002}
             epochs: {type: int, default: 500}
             dim: {type: int, default: 32}
             device: {type: string, default: 'cpu'}

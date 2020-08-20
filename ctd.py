@@ -156,6 +156,18 @@ with mlflow.start_run():
         code_paths=["./"],
     )
 
+    # full graph testing
+    model.eval()
+    with torch.no_grad():
+        z = model.encode(full_graph.adj_t.to(args.device))
+        auc, ap = model.test(
+            z,
+            full_graph.val_pos_edge_index.to(args.device),
+            full_graph.val_neg_edge_index.to(args.device),
+        )
+    mlflow.log_metric("Final AUC", auc)
+    mlflow.log_metric("Final AP", auc)
+
     # encode
     embeddings = gae.encode_ctd(model, full_graph, args.device)
     np.save("./embedding_unsupervised.npy", embeddings)
