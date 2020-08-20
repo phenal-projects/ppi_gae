@@ -58,14 +58,17 @@ class CTDEncoder(nn.Module):
         self.emb = nn.parameter.Parameter(
             torch.rand((nodes, in_channels)), requires_grad=True
         )
-        self.conv1 = gnn.GATConv(in_channels, out_channels, heads=4)
-        self.conv2 = gnn.GATConv(4 * out_channels, out_channels, heads=1)
+        self.conv1 = gnn.GCNConv(in_channels, 2 * out_channels, cached=False)
+        self.conv2 = gnn.GCNConv(
+            2 * out_channels, 4 * out_channels, cached=False
+        )
+        self.conv3 = gnn.GCNConv(4 * out_channels, out_channels, cached=False)
 
     def forward(self, edge_index):
         """Calculates embeddings"""
         x1 = F.relu(self.conv1(self.emb, edge_index))
         x2 = F.relu(self.conv2(x1, edge_index))
-        return torch.cat([x2, x1], -1)
+        return torch.cat([self.conv3(x2, edge_index), x2, x1], -1)
 
 
 class SimpleEncoder(nn.Module):
