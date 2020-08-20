@@ -120,6 +120,12 @@ full_graph.train_adj_t = SparseTensor(
     ),
     sparse_sizes=(len(node_classes), len(node_classes)),
 )
+full_graph.adj_t = SparseTensor(
+    row=torch.cat((edge_index[0], edge_index[1])),
+    col=torch.cat((edge_index[1], edge_index[0])),
+    value=torch.ones(2 * len(edge_index[1]), dtype=torch.float32),
+    sparse_sizes=(len(node_classes), len(node_classes)),
+)
 
 mlflow.set_tracking_uri("http://localhost:12345")
 
