@@ -54,7 +54,7 @@ class CTDEncoder(nn.Module):
         """
         super(CTDEncoder, self).__init__()
         self.in_channels = in_channels
-        self.out_channels = out_channels * 5
+        self.out_channels = out_channels * 6
         self.emb = nn.parameter.Parameter(
             torch.rand((nodes, in_channels)), requires_grad=True
         )
@@ -67,6 +67,29 @@ class CTDEncoder(nn.Module):
         x1 = F.relu(self.conv1(self.emb, edge_index))
         x2 = F.relu(self.conv2(x1, edge_index))
         return torch.cat([self.conv3(x2, edge_index), x2, x1], -1)
+
+
+class SimpleEncoder(nn.Module):
+    def __init__(self, in_channels, out_channels, nodes):
+        """Initializes the GCN encoder with encoded embeddings
+
+        Parameters
+        ----------
+        in_channels : int
+            The number of channels in the input graph nodes
+        out_channels : int
+            The number of dimensions in the embeddings
+        """
+        super(SimpleEncoder, self).__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels * 6
+        self.emb = nn.parameter.Parameter(
+            torch.rand((nodes, out_channels)), requires_grad=True
+        )
+
+    def forward(self, edge_index):
+        """Calculates embeddings"""
+        return self.emb
 
 
 def train_gae(
