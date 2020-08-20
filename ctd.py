@@ -10,7 +10,7 @@ import torch_geometric.nn as gnn
 import torch_geometric.data as gdata
 from torch_geometric.utils import (
     train_test_split_edges,
-    add_remaining_self_loops,
+    remove_self_loops,
 )
 from torch_sparse import SparseTensor
 
@@ -77,11 +77,15 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 np.random.seed(args.seed)
 
+# load the data
 edge_index = torch.LongTensor(np.load(args.edges))
 node_classes = torch.LongTensor(np.load(args.node_classes))
-full_graph = gdata.Data(edge_index=edge_index, node_classes=node_classes)
 
-# train test split edges
+# sanity check
+assert edge_index.shape[0] == 2
+assert torch.max(edge_index) < node_classes.shape[0]
+
+# train-test split edges
 genes = torch.arange(len(node_classes))[node_classes == 0]
 diseases = torch.arange(len(node_classes))[node_classes == 1]
 interclass_mask = torch.BoolTensor(
@@ -89,40 +93,32 @@ interclass_mask = torch.BoolTensor(
         np.isin(edge_index[0], diseases), np.isin(edge_index[1], diseases),
     )
 )
-full_graph.interclass_ei = edge_index[:, interclass_mask]
-mask = torch.rand(full_graph.interclass_ei.shape[1]) > 0.7
-full_graph.train_pos_edge_index = add_remaining_self_loops(
-    torch.cat(
-        [
-            full_graph.interclass_ei[:, mask],
-            full_graph.interclass_ei[:, mask][[1, 0]],
-            full_graph.edge_index[:, ~interclass_mask],
-            full_graph.edge_index[:, ~interclass_mask][[1, 0]],
-        ],
-        1,
-    )
-)[0]
+interclass_edges = edge_index[:, interclass_mask]
+
+full_graph = gdata.Data(
+    edge_index=remove_self_loops(
+        torch.cat((interclass_edges, interclass_edges[[1, 0]]), 1),
+    )[0],
+    node_classes=node_classes,
+    num_nodes=len(node_classes),
+)
+
+full_graph = train_test_split_edges(full_graph, val_ratio=0.3, test_ratio=0)
+full_graph.train_pos_with_ppi = torch.cat(
+    (
+        full_graph.train_pos_edge_index,
+        edge_index[:, ~interclass_mask],
+        edge_index[:, ~interclass_mask][[1, 0]],
+    ),
+    1,
+)
 full_graph.train_adj_t = SparseTensor(
-    row=full_graph.train_pos_edge_index[0],
-    col=full_graph.train_pos_edge_index[1],
+    row=full_graph.train_pos_with_ppi[0],
+    col=full_graph.train_pos_with_ppi[1],
     value=torch.ones(
-        len(full_graph.train_pos_edge_index[1]), dtype=torch.float32
+        len(full_graph.train_pos_with_ppi[1]), dtype=torch.float32
     ),
     sparse_sizes=(len(node_classes), len(node_classes)),
-)
-full_graph.val_pos_edge_index = add_remaining_self_loops(
-    torch.cat(
-        [
-            full_graph.interclass_ei[:, ~mask],
-            full_graph.interclass_ei[:, ~mask][[1, 0]],
-        ],
-        1,
-    )
-)[0]
-full_graph.val_neg_edge_index = negative_sampling(
-    full_graph.interclass_ei,
-    num_neg_samples=full_graph.val_pos_edge_index.shape[1],
-    force_undirected=True,
 )
 
 mlflow.set_tracking_uri("http://localhost:12345")
