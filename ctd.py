@@ -119,6 +119,12 @@ full_graph.train_pos_with_ppi = torch.cat(
     ),
     1,
 )
+
+# save split to check it later
+torch.save(full_graph.train_pos_edge_index, "train_ei.pt")
+torch.save(full_graph.val_pos_edge_index, "val_ei.pt")
+torch.save(full_graph.val_neg_edge_index, "val_ei_neg.pt")
+
 full_graph.train_adj_t = SparseTensor(
     row=full_graph.train_pos_with_ppi[0],
     col=full_graph.train_pos_with_ppi[1],

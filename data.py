@@ -212,12 +212,3 @@ def tissue_specific_ppi_cut(data, expr_level, threshold=0.22):
     data.edge_attr = data.edge_attr[mask]
     data.expr_mask = mask
     return data
-
-
-def pos_train_test_split(edge_index, gene_nodes, dis_nodes, test=0.3):
-    """Splits edges to exclude some nodes complitely"""
-    train_nodes = gene_nodes[torch.rand(shape=len(gene_nodes)) > 0.3]
-    np.logical_or(
-        np.isin(edge_index[0], train_nodes),
-        np.isin(edge_index[1], train_nodes),
-    )
