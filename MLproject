@@ -45,6 +45,7 @@ entry_points:
             device: {type: string, default: 'cpu'}
             seed: {type: int, default: 42}
             edges: path
+            features: path
             node_classes: path
         command: |
-            python ctd.py {lr} {wd} {epochs} {dim} {device} {seed} {edges} {node_classes}
+            python ctd.py {lr} {wd} {epochs} {dim} {device} {seed} {edges} {features} {node_classes}
