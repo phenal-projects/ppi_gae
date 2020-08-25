@@ -42,7 +42,7 @@ class Encoder(nn.Module):
 
 
 class CTDEncoder(nn.Module):
-    def __init__(self, in_channels, out_channels, nodes):
+    def __init__(self, in_channels, out_channels, drug_nodes):
         """Initializes the GCN encoder with encoded embeddings
 
         Parameters
@@ -56,7 +56,7 @@ class CTDEncoder(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels * 5
         self.emb = nn.parameter.Parameter(
-            torch.rand((nodes, in_channels)), requires_grad=True
+            torch.rand((drug_nodes, in_channels)), requires_grad=True
         )
         self.conv1 = gnn.GCNConv(in_channels, 2 * out_channels, cached=False)
         self.conv2 = gnn.GCNConv(
@@ -64,9 +64,9 @@ class CTDEncoder(nn.Module):
         )
         self.conv3 = gnn.GCNConv(4 * out_channels, out_channels, cached=False)
 
-    def forward(self, edge_index):
+    def forward(self, x, edge_index):
         """Calculates embeddings"""
-        x1 = F.relu(self.conv1(self.emb, edge_index))
+        x1 = F.relu(self.conv1(torch.cat((x, self.emb)), edge_index))
         x2 = F.relu(self.conv2(x1, edge_index))
         return torch.cat([self.conv3(x2, edge_index), x2, x1], -1)
 
@@ -284,11 +284,12 @@ def train_ctd_gae(
         for graph in loader:
 
             train_pos_adj = graph.train_adj_t.to(device)
+            x = graph.feats.to(device)
 
             model.train()
             optimizer.zero_grad()
             graph = graph
-            z = model.encode(train_pos_adj)
+            z = model.encode(x, train_pos_adj)
             loss = model.recon_loss(z, graph.train_pos_edge_index.to(device))
             loss.backward()
             optimizer.step()
@@ -296,7 +297,7 @@ def train_ctd_gae(
 
             model.eval()
             with torch.no_grad():
-                z = model.encode(train_pos_adj)
+                z = model.encode(x, train_pos_adj)
                 auc, ap = model.test(
                     z,
                     graph.val_pos_edge_index.to(device),
@@ -320,5 +321,5 @@ def encode_ctd(model, graph, device):
     """Encodes graph nodes with the given model"""
     model = model.to(device)
     with torch.no_grad():
-        z = model.encode(graph.adj_t.to(device))
+        z = model.encode(graph.feats.to(device), graph.adj_t.to(device))
     return z.detach().cpu().numpy()

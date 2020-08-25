@@ -42,6 +42,11 @@ def construct_parser():
         "edges", type=str, help="a path to the edge list (npy)"
     )
     parser.add_argument(
+        "features",
+        type=str,
+        help="a path to the features of the protein nodes (npy)",
+    )
+    parser.add_argument(
         "node_classes",
         type=str,
         help="a path to the expressions data file (npy)",
@@ -79,6 +84,7 @@ np.random.seed(args.seed)
 
 # load the data
 edge_index = torch.LongTensor(np.load(args.edges))
+features = torch.FloatTensor(np.load(args.features))
 node_classes = torch.LongTensor(np.load(args.node_classes))
 
 # sanity check
@@ -99,6 +105,7 @@ full_graph = gdata.Data(
     edge_index=remove_self_loops(
         torch.cat((interclass_edges, interclass_edges[[1, 0]]), 1),
     )[0],
+    feats=features,
     node_classes=node_classes,
     num_nodes=len(node_classes),
 )
@@ -130,7 +137,7 @@ full_graph.adj_t = SparseTensor(
 mlflow.set_tracking_uri("http://localhost:12345")
 
 with mlflow.start_run():
-    model = gnn.GAE(gae.CTDEncoder(62, args.dim, len(node_classes)))
+    model = gnn.GAE(gae.CTDEncoder(62, args.dim, torch.sum(node_classes)))
     optimizer = opt.AdamW(
         model.parameters(), args.lr, weight_decay=args.wd, amsgrad=True
     )
