@@ -166,7 +166,9 @@ with mlflow.start_run():
     # full graph testing
     model.eval()
     with torch.no_grad():
-        z = model.encode(full_graph.adj_t.to(args.device))
+        z = model.encode(
+            full_graph.feats.to(args.device), full_graph.adj_t.to(args.device)
+        )
         auc, ap = model.test(
             z,
             full_graph.val_pos_edge_index.to(args.device),
