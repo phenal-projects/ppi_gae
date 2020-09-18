@@ -36,9 +36,9 @@ class Encoder(nn.Module):
 
     def forward(self, x, edge_index):
         """Calculates embeddings"""
-        x1 = F.relu(self.conv1(x, edge_index))
-        x2 = F.relu(self.conv2(x1, edge_index))
-        return torch.cat([self.conv3(x2, edge_index), x2, x1], -1)
+        x1 = self.conv1(x, edge_index)
+        x2 = self.conv2(F.relu(x1), edge_index)
+        return torch.cat([self.conv3(F.relu(x2), edge_index), x2, x1], -1)
 
 
 class CTDEncoder(nn.Module):
@@ -66,9 +66,9 @@ class CTDEncoder(nn.Module):
 
     def forward(self, x, edge_index):
         """Calculates embeddings"""
-        x1 = F.relu(self.conv1(torch.cat((x, self.emb)), edge_index))
-        x2 = F.relu(self.conv2(x1, edge_index))
-        return torch.cat([self.conv3(x2, edge_index), x2, x1], -1)
+        x1 = self.conv1(torch.cat((x, self.emb)), edge_index)
+        x2 = self.conv2(F.relu(x1), edge_index)
+        return torch.cat([self.conv3(F.relu(x2), edge_index), x2, x1], -1)
 
 
 class SimpleEncoder(nn.Module):
