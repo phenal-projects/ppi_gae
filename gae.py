@@ -291,33 +291,49 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
             optimizer.zero_grad()
             graph = graph
             z = model.encode(x, train_pos_adj_gg, train_pos_adj_gd)
-            loss = F.binary_cross_entropy(
-                model.decode(z, graph.pos_train_gd.to(device)),
-                torch.ones(
-                    graph.pos_train_gd.shape[1], dtype=torch.float32, device=device
-                ),
+            loss = (
+                graph.pos_train_gd.shape[1]
+                / (graph.pos_train_gd.shape[1] + graph.pos_train_gg.shape[1])
+                * F.binary_cross_entropy(
+                    model.decode(z, graph.pos_train_gd.to(device)),
+                    torch.ones(
+                        graph.pos_train_gd.shape[1], dtype=torch.float32, device=device
+                    ),
+                )
             )
-            loss += F.binary_cross_entropy(
-                model.decode(z, graph.neg_train_gd.to(device)),
-                torch.zeros(
-                    graph.neg_train_gd.shape[1], dtype=torch.float32, device=device
-                ),
+            loss += (
+                graph.pos_train_gd.shape[1]
+                / (graph.pos_train_gd.shape[1] + graph.pos_train_gg.shape[1])
+                * F.binary_cross_entropy(
+                    model.decode(z, graph.neg_train_gd.to(device)),
+                    torch.zeros(
+                        graph.neg_train_gd.shape[1], dtype=torch.float32, device=device
+                    ),
+                )
             )
-            loss += F.binary_cross_entropy(
-                model.decode(z, graph.pos_train_gg.to(device)),
-                torch.ones(
-                    graph.pos_train_gg.shape[1], dtype=torch.float32, device=device
-                ),
+            loss += (
+                graph.pos_train_gg.shape[1]
+                / (graph.pos_train_gd.shape[1] + graph.pos_train_gg.shape[1])
+                * F.binary_cross_entropy(
+                    model.decode(z, graph.pos_train_gg.to(device)),
+                    torch.ones(
+                        graph.pos_train_gg.shape[1], dtype=torch.float32, device=device
+                    ),
+                )
             )
-            loss += F.binary_cross_entropy(
-                model.decode(z, graph.neg_train_gg.to(device)),
-                torch.zeros(
-                    graph.neg_train_gg.shape[1], dtype=torch.float32, device=device
-                ),
+            loss += (
+                graph.pos_train_gdg.shape[1]
+                / (graph.pos_train_gd.shape[1] + graph.pos_train_gg.shape[1])
+                * F.binary_cross_entropy(
+                    model.decode(z, graph.neg_train_gg.to(device)),
+                    torch.zeros(
+                        graph.neg_train_gg.shape[1], dtype=torch.float32, device=device
+                    ),
+                )
             )
             loss.backward()
             optimizer.step()
-            losses.append(loss.item() / 4)
+            losses.append(loss.item() / 2)
 
             model.eval()
             with torch.no_grad():
