@@ -292,7 +292,7 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
             graph = graph
             z = model.encode(x, train_pos_adj_gg, train_pos_adj_gd)
             loss = (
-                graph.pos_train_gd.shape[1]
+                graph.pos_train_gg.shape[1]
                 / (graph.pos_train_gd.shape[1] + graph.pos_train_gg.shape[1])
                 * F.binary_cross_entropy(
                     model.decode(z, graph.pos_train_gd.to(device)),
@@ -302,7 +302,7 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
                 )
             )
             loss += (
-                graph.pos_train_gd.shape[1]
+                graph.pos_train_gg.shape[1]
                 / (graph.pos_train_gd.shape[1] + graph.pos_train_gg.shape[1])
                 * F.binary_cross_entropy(
                     model.decode(z, graph.neg_train_gd.to(device)),
@@ -312,7 +312,7 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
                 )
             )
             loss += (
-                graph.pos_train_gg.shape[1]
+                graph.pos_train_gd.shape[1]
                 / (graph.pos_train_gd.shape[1] + graph.pos_train_gg.shape[1])
                 * F.binary_cross_entropy(
                     model.decode(z, graph.pos_train_gg.to(device)),
@@ -322,7 +322,7 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
                 )
             )
             loss += (
-                graph.pos_train_gg.shape[1]
+                graph.pos_train_gd.shape[1]
                 / (graph.pos_train_gd.shape[1] + graph.pos_train_gg.shape[1])
                 * F.binary_cross_entropy(
                     model.decode(z, graph.neg_train_gg.to(device)),
