@@ -29,9 +29,7 @@ class Encoder(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels * 5
         self.conv1 = gnn.GCNConv(in_channels, 2 * out_channels, cached=False)
-        self.conv2 = gnn.GCNConv(
-            2 * out_channels, 2 * out_channels, cached=False
-        )
+        self.conv2 = gnn.GCNConv(2 * out_channels, 2 * out_channels, cached=False)
         self.conv3 = gnn.GCNConv(2 * out_channels, out_channels, cached=False)
 
     def forward(self, x, edge_index):
@@ -59,9 +57,7 @@ class CTDEncoder(nn.Module):
             torch.rand((drug_nodes, in_channels)), requires_grad=True
         )
         self.conv1 = gnn.GCNConv(in_channels, 2 * out_channels, cached=False)
-        self.conv2 = gnn.GCNConv(
-            2 * out_channels, 4 * out_channels, cached=False
-        )
+        self.conv2 = gnn.GCNConv(2 * out_channels, 4 * out_channels, cached=False)
         self.conv3 = gnn.GCNConv(4 * out_channels, out_channels, cached=False)
 
     def forward(self, x, edge_index):
@@ -94,9 +90,7 @@ class SimpleEncoder(nn.Module):
         return self.emb
 
 
-def train_gae(
-    model, loader, optimizer, scheduler, device, epochs, callback=None
-):
+def train_gae(model, loader, optimizer, scheduler, device, epochs, callback=None):
     """Trains Graph Autoencoder
 
     Parameters
@@ -218,9 +212,7 @@ def finetune_gae(
             z = model(x, train_pos_adj)
             loss = loss_fn(
                 z[train_mask],
-                prob_labels(graph.y[train_mask], graph.probs[train_mask]).to(
-                    device
-                ),
+                prob_labels(graph.y[train_mask], graph.probs[train_mask]).to(device),
             )
             val_loss = loss_fn(z[val_mask], graph.y[val_mask].to(device),)
             loss.backward()
@@ -248,9 +240,7 @@ def encode(model, graph, device):
     return z.cpu().numpy()
 
 
-def train_ctd_gae(
-    model, loader, optimizer, scheduler, device, epochs, callback=None
-):
+def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=None):
     """Trains CTD Graph Autoencoder
 
     Parameters

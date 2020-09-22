@@ -20,9 +20,7 @@ def ap_shuffle(y_true, y_probas, base, rounds=1000):
     """Returns single-sided p-value for a given base value"""
     results = np.zeros(shape=rounds)
     for i in range(rounds):
-        results[i] = average_precision_score(
-            y_true, np.random.permutation(y_probas)
-        )
+        results[i] = average_precision_score(y_true, np.random.permutation(y_probas))
     return np.mean(base > results)
 
 
@@ -79,9 +77,7 @@ def class_test(embeddings, labels, val_mask=None, method="cr", enrichment=0):
                 sim_pu.knn_prob(train_data, cur_train_labels, enrichment),
             )
         x, y = resampler.fit_resample(train_data, cur_train_labels)
-        model = xgb.XGBClassifier(
-            objective="binary:logistic", nthread=11,
-        ).fit(
+        model = xgb.XGBClassifier(objective="binary:logistic", nthread=11,).fit(
             x,
             y,
             eval_set=[(val_data, val_labels[:, col])],
@@ -93,10 +89,7 @@ def class_test(embeddings, labels, val_mask=None, method="cr", enrichment=0):
         probas.append(model.predict_proba(test_data)[:, 1])
     if method == "cr":
         return classification_report(
-            test_labels,
-            np.stack(preds).T,
-            zero_division=False,
-            output_dict=True,
+            test_labels, np.stack(preds).T, zero_division=False, output_dict=True,
         )
     if method == "auc":
         res = dict()

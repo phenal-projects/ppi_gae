@@ -49,33 +49,21 @@ def construct_parser():
     parser = argparse.ArgumentParser(description="Train GAE.")
     parser.add_argument("lr", type=float, help="learning rate")
     parser.add_argument("wd", type=float, help="weight decay")
-    parser.add_argument(
-        "epochs", type=int, help="the number of epochs to train"
-    )
-    parser.add_argument(
-        "cut", type=float, help="the threshold for cutting weak edges"
-    )
+    parser.add_argument("epochs", type=int, help="the number of epochs to train")
+    parser.add_argument("cut", type=float, help="the threshold for cutting weak edges")
     parser.add_argument("dim", type=int, help="the size of embeddings")
     parser.add_argument(
-        "tissue",
-        type=str,
-        help="the column with expression in expression file",
+        "tissue", type=str, help="the column with expression in expression file",
     )
     parser.add_argument("device", type=str, help="cuda or cpu")
     parser.add_argument("seed", type=int, help="random seed for repruduction")
 
     # Paths
-    parser.add_argument(
-        "edges", type=str, help="a path to the edge list (tsv)"
-    )
+    parser.add_argument("edges", type=str, help="a path to the edge list (tsv)")
     parser.add_argument("ids", type=str, help="a path to the ids tsv")
+    parser.add_argument("feats", type=str, help="a path to the node features (tsv)")
     parser.add_argument(
-        "feats", type=str, help="a path to the node features (tsv)"
-    )
-    parser.add_argument(
-        "expression",
-        type=str,
-        help="a path to the expressions data file (tsv)",
+        "expression", type=str, help="a path to the expressions data file (tsv)",
     )
     return parser
 
@@ -110,10 +98,7 @@ def construct_sparse(loader):
         graph.edge_id = dict(
             list(
                 zip(
-                    (
-                        graph.num_nodes * graph.edge_index[0]
-                        + graph.edge_index[1]
-                    )
+                    (graph.num_nodes * graph.edge_index[0] + graph.edge_index[1])
                     .numpy()
                     .squeeze(),
                     graph.edge_attr.squeeze().numpy(),
@@ -121,9 +106,7 @@ def construct_sparse(loader):
             )
         )
         graphs.append(
-            data.make_sparse(
-                train_test_split_edges(graph, val_ratio=0.3, test_ratio=0)
-            )
+            data.make_sparse(train_test_split_edges(graph, val_ratio=0.3, test_ratio=0))
         )
     return graphs
 
@@ -148,9 +131,7 @@ with mlflow.start_run():
     graphs = construct_sparse(loader)
 
     # logging data stats
-    labels = data.labels_data(args.ids, ["skin_integrity"])[
-        full_graph.new_id.numpy()
-    ]
+    labels = data.labels_data(args.ids, ["skin_integrity"])[full_graph.new_id.numpy()]
     mlflow.log_param("nodes_left", full_graph.new_id.shape[0])
     mlflow.log_param("total_support", np.sum(labels))
 
@@ -170,10 +151,7 @@ with mlflow.start_run():
 
     model = torch.load("./best_model.pt")
     mlflow.pytorch.log_model(
-        model,
-        "unsupervised_model.pt",
-        conda_env="conda.yaml",
-        code_paths=["./"],
+        model, "unsupervised_model.pt", conda_env="conda.yaml", code_paths=["./"],
     )
     # encode
     embeddings = []
@@ -210,9 +188,5 @@ with mlflow.start_run():
         method="auc",
     )
     for key in classification_results:
-        mlflow.log_metric(
-            "auc_" + classes[key], classification_results[key]["roc"]
-        )
-        mlflow.log_metric(
-            "ap_" + classes[key], classification_results[key]["ap"]
-        )
+        mlflow.log_metric("auc_" + classes[key], classification_results[key]["roc"])
+        mlflow.log_metric("ap_" + classes[key], classification_results[key]["ap"])

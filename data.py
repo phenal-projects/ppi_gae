@@ -57,9 +57,7 @@ def graph_data(
         edge_attr = torch.cat([edge_attr, edge_attr], 0)
 
     # features
-    protein_ids = pd.read_csv(protein_ids_path, sep="\t")[
-        ["id", protein_id_col_prot]
-    ]
+    protein_ids = pd.read_csv(protein_ids_path, sep="\t")[["id", protein_id_col_prot]]
     x = pd.read_csv(node_features_path, sep="\t")
     feature_columns = x.drop(protein_id_col_node, 1).columns
     x = pd.merge(
@@ -178,9 +176,7 @@ def tissue_specific_ppi(data, expr_level):
         New reweighted graph
     """
     row, col = data.edge_index
-    data.edge_attr = (
-        data.edge_attr.squeeze() * expr_level[row] * expr_level[col]
-    )
+    data.edge_attr = data.edge_attr.squeeze() * expr_level[row] * expr_level[col]
     data.edge_attr = data.edge_attr / data.edge_attr.max()
     data.edge_attr = data.edge_attr.reshape(-1, 1)
     return data

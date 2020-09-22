@@ -58,15 +58,11 @@ def construct_parser():
     parser = argparse.ArgumentParser(description="Finetune pretrained model.")
     parser.add_argument("lr", type=float, help="learning rate")
     parser.add_argument("wd", type=float, help="weight decay")
-    parser.add_argument(
-        "epochs", type=int, help="the number of epochs to train"
-    )
+    parser.add_argument("epochs", type=int, help="the number of epochs to train")
     parser.add_argument(
         "k", type=int, help="the number of neighbors to enrich positive class"
     )
-    parser.add_argument(
-        "cut", type=float, help="the threshold for cutting weak edges"
-    )
+    parser.add_argument("cut", type=float, help="the threshold for cutting weak edges")
     parser.add_argument(
         "target", type=str, help="a column in ids file to be used as a target"
     )
@@ -78,17 +74,11 @@ def construct_parser():
 
     # Paths
     parser.add_argument("model", type=str, help="a path to a serialized model")
-    parser.add_argument(
-        "edges", type=str, help="a path to the edge list (tsv)"
-    )
+    parser.add_argument("edges", type=str, help="a path to the edge list (tsv)")
     parser.add_argument("ids", type=str, help="a path to the ids tsv")
+    parser.add_argument("feats", type=str, help="a path to the node features (tsv)")
     parser.add_argument(
-        "feats", type=str, help="a path to the node features (tsv)"
-    )
-    parser.add_argument(
-        "expression",
-        type=str,
-        help="a path to the expressions data file (tsv)",
+        "expression", type=str, help="a path to the expressions data file (tsv)",
     )
     return parser
 
@@ -113,9 +103,7 @@ def load_data(args):
     else:
         full_graph.new_id = full_graph.id
     target = data.labels_data(args.ids, [args.target])
-    full_graph.y = torch.tensor(
-        target[full_graph["id"]].squeeze(), dtype=torch.long
-    )
+    full_graph.y = torch.tensor(target[full_graph["id"]].squeeze(), dtype=torch.long)
     full_graph.train_nodes_mask = torch.rand((full_graph.num_nodes,)) > 0.3
     loader = data.cluster_data(full_graph, 1, 1, shuffle=True, verbose=True)
     return loader, target, full_graph
@@ -128,10 +116,7 @@ def construct_sparse(loader):
         graph.edge_id = dict(
             list(
                 zip(
-                    (
-                        graph.num_nodes * graph.edge_index[0]
-                        + graph.edge_index[1]
-                    )
+                    (graph.num_nodes * graph.edge_index[0] + graph.edge_index[1])
                     .numpy()
                     .squeeze(),
                     graph.edge_attr.squeeze().numpy(),
@@ -139,9 +124,7 @@ def construct_sparse(loader):
             )
         )
         graphs.append(
-            data.make_sparse(
-                train_test_split_edges(graph, val_ratio=0, test_ratio=0)
-            )
+            data.make_sparse(train_test_split_edges(graph, val_ratio=0, test_ratio=0))
         )
     return graphs
 
@@ -229,21 +212,12 @@ with mlflow.start_run():
     for param in model.lin.parameters():
         param.requires_grad = True
 
-    optimizer = opt.AdamW(
-        model.parameters(), 0.005, weight_decay=args.wd, amsgrad=True
-    )
+    optimizer = opt.AdamW(model.parameters(), 0.005, weight_decay=args.wd, amsgrad=True)
     scheduler = opt.lr_scheduler.ReduceLROnPlateau(
         optimizer, factor=0.5, patience=20, verbose=True
     )
     model = gae.finetune_gae(
-        model,
-        graphs,
-        loss_fn,
-        optimizer,
-        scheduler,
-        args.device,
-        200,
-        callback,
+        model, graphs, loss_fn, optimizer, scheduler, args.device, 200, callback,
     )
 
     # finetune
@@ -271,10 +245,7 @@ with mlflow.start_run():
 
         model = torch.load("./best_finetuned_model.pt")
         mlflow.pytorch.log_model(
-            model,
-            "finetuned_model.pt",
-            conda_env="conda.yaml",
-            code_paths=["./"],
+            model, "finetuned_model.pt", conda_env="conda.yaml", code_paths=["./"],
         )
 
         # encode
@@ -305,19 +276,13 @@ with mlflow.start_run():
     classification_results = class_test(
         embeddings[full_graph.new_id.numpy()],
         data.labels_data(args.ids, classes)[full_graph.new_id.numpy()],
-        val_mask=~full_graph.train_nodes_mask.numpy()[
-            full_graph.new_id.numpy()
-        ],
+        val_mask=~full_graph.train_nodes_mask.numpy()[full_graph.new_id.numpy()],
         method="auc",
         enrichment=args.k,
     )
     for key in classification_results:
-        mlflow.log_metric(
-            "auc_" + classes[key], classification_results[key]["roc"]
-        )
-        mlflow.log_metric(
-            "ap_" + classes[key], classification_results[key]["ap"]
-        )
+        mlflow.log_metric("auc_" + classes[key], classification_results[key]["roc"])
+        mlflow.log_metric("ap_" + classes[key], classification_results[key]["ap"])
         mlflow.log_metric(
             "auc_pval_" + classes[key], classification_results[key]["roc_pval"]
         )

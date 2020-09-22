@@ -30,26 +30,18 @@ def construct_parser():
     parser = argparse.ArgumentParser(description="Train HGAE.")
     parser.add_argument("lr", type=float, help="learning rate")
     parser.add_argument("wd", type=float, help="weight decay")
-    parser.add_argument(
-        "epochs", type=int, help="the number of epochs to train"
-    )
+    parser.add_argument("epochs", type=int, help="the number of epochs to train")
     parser.add_argument("dim", type=int, help="the size of embeddings")
     parser.add_argument("device", type=str, help="cuda or cpu")
     parser.add_argument("seed", type=int, help="random seed for repruduction")
 
     # Paths
+    parser.add_argument("edges", type=str, help="a path to the edge list (npy)")
     parser.add_argument(
-        "edges", type=str, help="a path to the edge list (npy)"
+        "features", type=str, help="a path to the features of the protein nodes (npy)",
     )
     parser.add_argument(
-        "features",
-        type=str,
-        help="a path to the features of the protein nodes (npy)",
-    )
-    parser.add_argument(
-        "node_classes",
-        type=str,
-        help="a path to the expressions data file (npy)",
+        "node_classes", type=str, help="a path to the expressions data file (npy)",
     )
     return parser
 
@@ -95,9 +87,7 @@ assert torch.max(edge_index) < node_classes.shape[0]
 genes = torch.arange(len(node_classes))[node_classes == 0]
 diseases = torch.arange(len(node_classes))[node_classes == 1]
 interclass_mask = torch.BoolTensor(
-    np.logical_or(
-        np.isin(edge_index[0], diseases), np.isin(edge_index[1], diseases),
-    )
+    np.logical_or(np.isin(edge_index[0], diseases), np.isin(edge_index[1], diseases),)
 )
 interclass_edges = edge_index[:, interclass_mask]
 
@@ -128,9 +118,7 @@ torch.save(full_graph.val_neg_edge_index, "val_ei_neg.pt")
 full_graph.train_adj_t = SparseTensor(
     row=full_graph.train_pos_with_ppi[0],
     col=full_graph.train_pos_with_ppi[1],
-    value=torch.ones(
-        len(full_graph.train_pos_with_ppi[1]), dtype=torch.float32
-    ),
+    value=torch.ones(len(full_graph.train_pos_with_ppi[1]), dtype=torch.float32),
     sparse_sizes=(len(node_classes), len(node_classes)),
 )
 full_graph.adj_t = SparseTensor(
@@ -151,22 +139,13 @@ with mlflow.start_run():
         optimizer, factor=0.5, patience=20, verbose=True
     )
     model = gae.train_ctd_gae(
-        model,
-        [full_graph],
-        optimizer,
-        scheduler,
-        args.device,
-        args.epochs,
-        callback,
+        model, [full_graph], optimizer, scheduler, args.device, args.epochs, callback,
     )
     torch.save(model, "./model.pt")
 
     model = torch.load("./best_model.pt")
     mlflow.pytorch.log_model(
-        model,
-        "unsupervised_ctd_model.pt",
-        conda_env="conda.yaml",
-        code_paths=["./"],
+        model, "unsupervised_ctd_model.pt", conda_env="conda.yaml", code_paths=["./"],
     )
 
     # full graph testing
