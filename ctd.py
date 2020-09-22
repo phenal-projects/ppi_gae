@@ -95,11 +95,11 @@ assert torch.max(edge_index) < node_classes.shape[0]
 genes = torch.arange(len(node_classes))[node_classes == 0]
 diseases = torch.arange(len(node_classes))[node_classes == 1]
 validation_genes_mask = torch.randint(
-    0, 2, size=(len(node_classes) - torch.sum(node_classes).item(),)
+    0, 100, size=(len(node_classes) - torch.sum(node_classes).item(),)
 )
 validation_genes = torch.arange(
     0, len(node_classes) - torch.sum(node_classes), dtype=torch.long
-)[validation_genes_mask == 0]
+)[validation_genes_mask < 35]
 
 full_graph = gdata.Data(
     edge_index=torch.cat((edge_index, edge_index[[1, 0]]), 1),
