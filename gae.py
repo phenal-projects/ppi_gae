@@ -339,7 +339,7 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
         mean_ap_gg = np.sum(aps_gg[-len(loader) :]) / len(loader)
         mean_loss = np.sum(losses[-len(loader) :]) / len(loader)
         if scheduler is not None:
-            scheduler.step(losses)
+            scheduler.step(mean_loss)
 
         if callback is not None:
             if callback(

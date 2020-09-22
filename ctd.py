@@ -55,13 +55,13 @@ def callback(model, auc_ap_loss):
     global ESTOP_COUNTER
     global EPOCH_COUNTER
     auc_gd, ap_gd, auc_gg, ap_gg, loss = auc_ap_loss
-    if BEST_AUC < auc:
-        BEST_AUC = auc
+    if BEST_AUC < (auc_gd + auc_gg) / 2:
+        BEST_AUC = (auc_gd + auc_gg) / 2
         ESTOP_COUNTER = 0
         torch.save(model, "./best_model.pt")
     ESTOP_COUNTER += 1
     mlflow.log_metric("ROC_AUC_GD", auc_gd, step=EPOCH_COUNTER)
-    mlflow.log_metric("AP_GG", ap_gd, step=EPOCH_COUNTER)
+    mlflow.log_metric("AP_GD", ap_gd, step=EPOCH_COUNTER)
     mlflow.log_metric("ROC_AUC_GG", auc_gg, step=EPOCH_COUNTER)
     mlflow.log_metric("AP_GG", ap_gg, step=EPOCH_COUNTER)
     mlflow.log_metric("LOSS", loss, step=EPOCH_COUNTER)
@@ -99,7 +99,7 @@ validation_genes_mask = torch.randint(
 )
 validation_genes = torch.arange(
     0, len(node_classes) - torch.sum(node_classes), dtype=torch.long
-)[validation_genes_mask]
+)[validation_genes_mask == 0]
 
 full_graph = gdata.Data(
     edge_index=torch.cat((edge_index, edge_index[[1, 0]]), 1),
