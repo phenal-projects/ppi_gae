@@ -41,9 +41,6 @@ def construct_parser():
     # Paths
     parser.add_argument("edges", type=str, help="a path to the edge list (npy)")
     parser.add_argument(
-        "edge_types", type=str, help="a path to the edge types list (npy)"
-    )
-    parser.add_argument(
         "features", type=str, help="a path to the features of the protein nodes (npy)",
     )
     parser.add_argument(
@@ -82,9 +79,10 @@ np.random.seed(args.seed)
 
 # load the data
 edge_index = torch.LongTensor(np.load(args.edges))
-edge_types = torch.LongTensor(np.load(args.edge_types))
-features = torch.FloatTensor(np.load(args.features))
 node_classes = torch.LongTensor(np.load(args.node_classes))
+edge_types = torch.sum(edge_index >= (len(node_classes) - torch.sum(node_classes)), 0)
+features = torch.FloatTensor(np.load(args.features))
+
 
 # sanity check
 assert edge_index.shape[0] == 2
@@ -136,7 +134,7 @@ full_graph.pos_train_gg = full_graph.edge_index[
 neg = negative_sampling(
     full_graph.edge_index, full_graph.num_nodes, force_undirected=True
 )
-neg_edge_type = torch.sum(neg > len(node_classes) - torch.sum(node_classes), 0)
+neg_edge_type = torch.sum(neg >= (len(node_classes) - torch.sum(node_classes)), 0)
 neg_val = torch.logical_or(
     torch.logical_and(
         torch.BoolTensor(np.isin(neg[0], validation_genes),), neg_edge_type == 1,
