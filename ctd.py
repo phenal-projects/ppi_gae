@@ -92,7 +92,7 @@ assert torch.max(edge_index) < node_classes.shape[0]
 genes = torch.arange(len(node_classes))[node_classes == 0]
 diseases = torch.arange(len(node_classes))[node_classes == 1]
 validation_genes_mask = torch.randint(
-    0, 2, size=len(node_classes) - torch.sum(node_classes)
+    0, 2, size=(len(node_classes) - torch.sum(node_classes).item(),)
 )
 validation_genes = torch.arange(
     0, len(node_classes) - torch.sum(node_classes), dtype=torch.long
@@ -122,7 +122,7 @@ full_graph.pos_train_gd = full_graph.edge_index[
     :, torch.logical_and(torch.logical_not(pos_val), full_graph.edge_types == 1)
 ]
 pos_val = torch.logical_and(
-    torch.randint(0, 3, size=len(full_graph.edge_types)) == 0,
+    torch.randint(0, 3, size=(len(full_graph.edge_types),)) == 0,
     full_graph.edge_types == 0,
 )
 full_graph.pos_val_gg = full_graph.edge_index[:, pos_val]
@@ -148,28 +148,36 @@ full_graph.neg_train_gd = neg[
     :, torch.logical_and(torch.logical_not(neg_val), neg_edge_type == 1)
 ]
 neg_val = torch.logical_and(
-    torch.randint(0, 3, size=neg.shape[1]) == 0, neg_edge_type == 0,
+    torch.randint(0, 3, size=(neg.shape[1],)) == 0, neg_edge_type == 0,
 )
 full_graph.neg_val_gg = neg[:, neg_val]
-full_graph.neg_train_gg = full_graph.edge_index[
+full_graph.neg_train_gg = neg[
     :, torch.logical_and(torch.logical_not(neg_val), neg_edge_type == 0)
 ]
 
 # sparse tensor
-total_train = torch.cat((full_graph.pos_train_gg, full_graph.pos_train_gd), 1)
-full_graph.train_adj_t = SparseTensor(
-    row=total_train[0],
-    col=total_train[1],
-    value=torch.cat(
-        torch.zeros(full_graph.pos_train_gg.shape[1], dtype=torch.long),
-        torch.ones(full_graph.pos_train_gd.shape[1], dtype=torch.long),
-    ),
+full_graph.train_adj_t_gg = SparseTensor(
+    row=full_graph.pos_train_gg[0],
+    col=full_graph.pos_train_gg[1],
+    value=torch.ones(full_graph.pos_train_gg.shape[1], dtype=torch.float),
     sparse_sizes=(len(node_classes), len(node_classes)),
 )
-full_graph.adj_t = SparseTensor(
-    row=full_graph.edge_index[0],
-    col=full_graph.edge_index[1],
-    value=full_graph.edge_types,
+full_graph.train_adj_t_gd = SparseTensor(
+    row=full_graph.pos_train_gd[0],
+    col=full_graph.pos_train_gd[1],
+    value=torch.ones(full_graph.pos_train_gd.shape[1], dtype=torch.float),
+    sparse_sizes=(len(node_classes), len(node_classes)),
+)
+full_graph.adj_t_gg = SparseTensor(
+    row=full_graph.edge_index[0][full_graph.edge_types == 0],
+    col=full_graph.edge_index[1][full_graph.edge_types == 0],
+    value=torch.ones(torch.sum(full_graph.edge_types == 0).item(), dtype=torch.float),
+    sparse_sizes=(len(node_classes), len(node_classes)),
+)
+full_graph.adj_t_gd = SparseTensor(
+    row=full_graph.edge_index[0][full_graph.edge_types == 1],
+    col=full_graph.edge_index[1][full_graph.edge_types == 1],
+    value=torch.ones(torch.sum(full_graph.edge_types == 1).item(), dtype=torch.float),
     sparse_sizes=(len(node_classes), len(node_classes)),
 )
 
@@ -197,7 +205,9 @@ with mlflow.start_run():
     model.eval()
     with torch.no_grad():
         z = model.encode(
-            full_graph.feats.to(args.device), full_graph.adj_t.to(args.device)
+            full_graph.feats.to(args.device),
+            full_graph.adj_t_gg.to(args.device),
+            full_graph.adj_t_gd.to(args.device),
         )
         auc, ap = model.test(
             z,

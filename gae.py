@@ -1,5 +1,4 @@
 import numpy as np
-from pandas.core.series import num
 
 from sim_pu import prob_labels
 
@@ -57,15 +56,21 @@ class CTDEncoder(nn.Module):
         self.emb = nn.parameter.Parameter(
             torch.rand((drug_nodes, in_channels)), requires_grad=True
         )
-        self.conv1 = gnn.RGCNConv(in_channels, 2 * out_channels, num_relations=3)
-        self.conv2 = gnn.RGCNConv(2 * out_channels, 4 * out_channels, num_relations=3)
-        self.conv3 = gnn.RGCNConv(4 * out_channels, out_channels, num_relations=3)
+        self.conv1_gg = gnn.GCNConv(in_channels, 2 * out_channels, cached=False)
+        self.conv2_gg = gnn.GCNConv(2 * out_channels, 4 * out_channels, cached=False)
+        self.conv3_gg = gnn.GCNConv(4 * out_channels, out_channels, cached=False)
+        self.conv1_gd = gnn.GCNConv(in_channels, 2 * out_channels, cached=False)
+        self.conv2_gd = gnn.GCNConv(2 * out_channels, 4 * out_channels, cached=False)
+        self.conv3_gd = gnn.GCNConv(4 * out_channels, out_channels, cached=False)
 
-    def forward(self, x, adj_t):
+    def forward(self, x, adj_t_gg, adj_t_gd):
         """Calculates embeddings"""
-        x1 = self.conv1(torch.cat((x, self.emb)), adj_t)
-        x2 = self.conv2(F.relu(x1), adj_t)
-        return torch.cat([self.conv3(F.relu(x2), adj_t), x2, x1], -1)
+        x1 = self.conv1_gg(torch.cat((x, self.emb)), adj_t_gg) + self.conv1_gd(
+            torch.cat((x, self.emb)), adj_t_gd
+        )
+        x2 = self.conv2_gg(F.relu(x1), adj_t_gg) + self.conv2_gd(F.relu(x1), adj_t_gd)
+        x3 = self.conv3_gg(F.relu(x2), adj_t_gg) + self.conv3_gd(F.relu(x2), adj_t_gd)
+        return torch.cat((x1, x2, x3), -1)
 
 
 class SimpleEncoder(nn.Module):
@@ -274,13 +279,14 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
     for epoch in range(epochs):
         for graph in loader:
 
-            train_pos_adj = graph.train_adj_t.to(device)
+            train_pos_adj_gg = graph.train_adj_t_gg.to(device)
+            train_pos_adj_gd = graph.train_adj_t_gd.to(device)
             x = graph.feats.to(device)
 
             model.train()
             optimizer.zero_grad()
             graph = graph
-            z = model.encode(x, train_pos_adj)
+            z = model.encode(x, train_pos_adj_gg, train_pos_adj_gd)
             loss = F.binary_cross_entropy(
                 model.decode(z, graph.pos_train_gd.to(device)),
                 torch.ones(
@@ -299,7 +305,7 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
 
             model.eval()
             with torch.no_grad():
-                z = model.encode(x, train_pos_adj)
+                z = model.encode(x, train_pos_adj_gg, train_pos_adj_gd)
                 auc, ap = model.test(
                     z, graph.pos_val_gd.to(device), graph.neg_val_gd.to(device),
                 )
@@ -321,5 +327,9 @@ def encode_ctd(model, graph, device):
     """Encodes graph nodes with the given model"""
     model = model.to(device)
     with torch.no_grad():
-        z = model.encode(graph.feats.to(device), graph.adj_t.to(device))
+        z = model.encode(
+            graph.feats.to(device),
+            graph.adj_t_gg.to(device),
+            graph.adj_t_gd.to(device),
+        )
     return z.detach().cpu().numpy()
