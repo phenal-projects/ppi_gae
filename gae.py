@@ -273,9 +273,13 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
         Trained model
     """
     model.to(device)
+
     losses = []
-    aucs = []
-    aps = []
+    aucs_gd = []
+    aps_gd = []
+    aucs_gg = []
+    aps_gg = []
+
     for epoch in range(epochs):
         for graph in loader:
 
@@ -299,9 +303,21 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
                     graph.neg_train_gd.shape[1], dtype=torch.float32, device=device
                 ),
             )
+            loss += F.binary_cross_entropy(
+                model.decode(z, graph.pos_train_gg.to(device)),
+                torch.ones(
+                    graph.pos_train_gd.shape[1], dtype=torch.float32, device=device
+                ),
+            )
+            loss += F.binary_cross_entropy(
+                model.decode(z, graph.neg_train_gg.to(device)),
+                torch.zeros(
+                    graph.pos_train_gd.shape[1], dtype=torch.float32, device=device
+                ),
+            )
             loss.backward()
             optimizer.step()
-            losses.append(loss.item() / 2)
+            losses.append(loss.item() / 4)
 
             model.eval()
             with torch.no_grad():
@@ -309,16 +325,26 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
                 auc, ap = model.test(
                     z, graph.pos_val_gd.to(device), graph.neg_val_gd.to(device),
                 )
-            aucs.append(auc)
-            aps.append(ap)
+                aucs_gd.append(auc)
+                aps_gd.append(ap)
+                auc, ap = model.test(
+                    z, graph.pos_val_gg.to(device), graph.neg_val_gg.to(device),
+                )
+                aucs_gg.append(auc)
+                aps_gg.append(ap)
 
-        mean_auc = np.sum(aucs[-len(loader) :]) / len(loader)
-        mean_ap = np.sum(aps[-len(loader) :]) / len(loader)
+        mean_auc_gd = np.sum(aucs_gd[-len(loader) :]) / len(loader)
+        mean_ap_gd = np.sum(aps_gd[-len(loader) :]) / len(loader)
+        mean_auc_gg = np.sum(aucs_gg[-len(loader) :]) / len(loader)
+        mean_ap_gg = np.sum(aps_gg[-len(loader) :]) / len(loader)
+        mean_loss = np.sum(losses[-len(loader) :]) / len(loader)
         if scheduler is not None:
-            scheduler.step(-mean_auc)
+            scheduler.step(losses)
 
         if callback is not None:
-            if callback(model, (mean_auc, mean_ap)):
+            if callback(
+                model, (mean_auc_gd, mean_ap_gd, mean_auc_gg, mean_ap_gg, mean_loss)
+            ):
                 return model
     return model
 

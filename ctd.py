@@ -49,19 +49,22 @@ def construct_parser():
     return parser
 
 
-def callback(model, auc_ap):
+def callback(model, auc_ap_loss):
     """A callback function for printing training stats"""
     global BEST_AUC
     global ESTOP_COUNTER
     global EPOCH_COUNTER
-    auc, ap = auc_ap
+    auc_gd, ap_gd, auc_gg, ap_gg, loss = auc_ap_loss
     if BEST_AUC < auc:
         BEST_AUC = auc
         ESTOP_COUNTER = 0
         torch.save(model, "./best_model.pt")
     ESTOP_COUNTER += 1
-    mlflow.log_metric("ROC_AUC", auc, step=EPOCH_COUNTER)
-    mlflow.log_metric("AP", ap, step=EPOCH_COUNTER)
+    mlflow.log_metric("ROC_AUC_GD", auc_gd, step=EPOCH_COUNTER)
+    mlflow.log_metric("AP_GG", ap_gd, step=EPOCH_COUNTER)
+    mlflow.log_metric("ROC_AUC_GG", auc_gg, step=EPOCH_COUNTER)
+    mlflow.log_metric("AP_GG", ap_gg, step=EPOCH_COUNTER)
+    mlflow.log_metric("LOSS", loss, step=EPOCH_COUNTER)
     EPOCH_COUNTER += 1
     if ESTOP_COUNTER > 500:
         print("Stop!")
@@ -211,13 +214,15 @@ with mlflow.start_run():
         )
         auc, ap = model.test(
             z,
-            full_graph.val_pos_edge_index.to(args.device),
-            full_graph.val_neg_edge_index.to(args.device),
+            full_graph.pos_val_gd.to(args.device),
+            full_graph.neg_val_gd.to(args.device),
         )
-    mlflow.log_metric("Final AUC", auc)
-    mlflow.log_metric("Final AP", ap)
+    mlflow.log_metric("Final AUC (G-D)", auc)
+    mlflow.log_metric("Final AP (G-D)", ap)
 
     # encode
     embeddings = gae.encode_ctd(model, full_graph, args.device)
     np.save("./embedding_unsupervised.npy", embeddings)
     mlflow.log_artifact("./embedding_unsupervised.npy")
+    torch.save(validation_genes, "val_node.pt")
+    mlflow.log_artifact("./val_node.pt")
