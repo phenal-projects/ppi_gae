@@ -306,13 +306,13 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
             loss += F.binary_cross_entropy(
                 model.decode(z, graph.pos_train_gg.to(device)),
                 torch.ones(
-                    graph.pos_train_gd.shape[1], dtype=torch.float32, device=device
+                    graph.pos_train_gg.shape[1], dtype=torch.float32, device=device
                 ),
             )
             loss += F.binary_cross_entropy(
                 model.decode(z, graph.neg_train_gg.to(device)),
                 torch.zeros(
-                    graph.pos_train_gd.shape[1], dtype=torch.float32, device=device
+                    graph.neg_train_gg.shape[1], dtype=torch.float32, device=device
                 ),
             )
             loss.backward()
