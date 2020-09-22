@@ -1,4 +1,5 @@
 import numpy as np
+from pandas.core.series import num
 
 from sim_pu import prob_labels
 
@@ -56,15 +57,15 @@ class CTDEncoder(nn.Module):
         self.emb = nn.parameter.Parameter(
             torch.rand((drug_nodes, in_channels)), requires_grad=True
         )
-        self.conv1 = gnn.GCNConv(in_channels, 2 * out_channels, cached=False)
-        self.conv2 = gnn.GCNConv(2 * out_channels, 4 * out_channels, cached=False)
-        self.conv3 = gnn.GCNConv(4 * out_channels, out_channels, cached=False)
+        self.conv1 = gnn.RGCNConv(in_channels, 2 * out_channels, num_relations=3)
+        self.conv2 = gnn.RGCNConv(2 * out_channels, 4 * out_channels, num_relations=3)
+        self.conv3 = gnn.RGCNConv(4 * out_channels, out_channels, num_relations=3)
 
-    def forward(self, x, edge_index):
+    def forward(self, x, adj_t):
         """Calculates embeddings"""
-        x1 = self.conv1(torch.cat((x, self.emb)), edge_index)
-        x2 = self.conv2(F.relu(x1), edge_index)
-        return torch.cat([self.conv3(F.relu(x2), edge_index), x2, x1], -1)
+        x1 = self.conv1(torch.cat((x, self.emb)), adj_t)
+        x2 = self.conv2(F.relu(x1), adj_t)
+        return torch.cat([self.conv3(F.relu(x2), adj_t), x2, x1], -1)
 
 
 class SimpleEncoder(nn.Module):
@@ -280,18 +281,27 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
             optimizer.zero_grad()
             graph = graph
             z = model.encode(x, train_pos_adj)
-            loss = model.recon_loss(z, graph.train_pos_edge_index.to(device))
+            loss = F.binary_cross_entropy(
+                model.decode(z, graph.pos_train_gd.to(device)),
+                torch.ones(
+                    graph.pos_train_gd.shape[1], dtype=torch.float32, device=device
+                ),
+            )
+            loss += F.binary_cross_entropy(
+                model.decode(z, graph.neg_train_gd.to(device)),
+                torch.zeros(
+                    graph.neg_train_gd.shape[1], dtype=torch.float32, device=device
+                ),
+            )
             loss.backward()
             optimizer.step()
-            losses.append(loss.item())
+            losses.append(loss.item() / 2)
 
             model.eval()
             with torch.no_grad():
                 z = model.encode(x, train_pos_adj)
                 auc, ap = model.test(
-                    z,
-                    graph.val_pos_edge_index.to(device),
-                    graph.val_neg_edge_index.to(device),
+                    z, graph.pos_val_gd.to(device), graph.neg_val_gd.to(device),
                 )
             aucs.append(auc)
             aps.append(ap)

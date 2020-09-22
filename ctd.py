@@ -1,8 +1,10 @@
 """CTD Gene-Disease GAE training"""
+from operator import pos
 from sys import argv
 import argparse
 
 import numpy as np
+from numpy.core.numeric import full
 
 import torch
 import torch.optim as opt
@@ -11,6 +13,7 @@ import torch_geometric.data as gdata
 from torch_geometric.utils import (
     train_test_split_edges,
     remove_self_loops,
+    negative_sampling,
 )
 from torch_sparse import SparseTensor
 
@@ -37,6 +40,9 @@ def construct_parser():
 
     # Paths
     parser.add_argument("edges", type=str, help="a path to the edge list (npy)")
+    parser.add_argument(
+        "edge_types", type=str, help="a path to the edge types list (npy)"
+    )
     parser.add_argument(
         "features", type=str, help="a path to the features of the protein nodes (npy)",
     )
@@ -76,6 +82,7 @@ np.random.seed(args.seed)
 
 # load the data
 edge_index = torch.LongTensor(np.load(args.edges))
+edge_types = torch.LongTensor(np.load(args.edge_types))
 features = torch.FloatTensor(np.load(args.features))
 node_classes = torch.LongTensor(np.load(args.node_classes))
 
@@ -86,45 +93,85 @@ assert torch.max(edge_index) < node_classes.shape[0]
 # train-test split edges
 genes = torch.arange(len(node_classes))[node_classes == 0]
 diseases = torch.arange(len(node_classes))[node_classes == 1]
-interclass_mask = torch.BoolTensor(
-    np.logical_or(np.isin(edge_index[0], diseases), np.isin(edge_index[1], diseases),)
+validation_genes_mask = torch.randint(
+    0, 2, size=len(node_classes) - torch.sum(node_classes)
 )
-interclass_edges = edge_index[:, interclass_mask]
+validation_genes = torch.arange(
+    0, len(node_classes) - torch.sum(node_classes), dtype=torch.long
+)[validation_genes_mask]
 
 full_graph = gdata.Data(
-    edge_index=remove_self_loops(
-        torch.cat((interclass_edges, interclass_edges[[1, 0]]), 1),
-    )[0],
+    edge_index=torch.cat((edge_index, edge_index[[1, 0]]), 1),
+    edge_types=torch.cat((edge_types, edge_types)),
     feats=features,
     node_classes=node_classes,
     num_nodes=len(node_classes),
 )
 
-full_graph = train_test_split_edges(full_graph, val_ratio=0.3, test_ratio=0)
-full_graph.train_pos_with_ppi = torch.cat(
-    (
-        full_graph.train_pos_edge_index,
-        edge_index[:, ~interclass_mask],
-        edge_index[:, ~interclass_mask][[1, 0]],
+# positive train/val
+pos_val = torch.logical_or(
+    torch.logical_and(
+        torch.BoolTensor(np.isin(full_graph.edge_index[0], validation_genes),),
+        full_graph.edge_types == 1,
     ),
-    1,
+    torch.logical_and(
+        torch.BoolTensor(np.isin(full_graph.edge_index[1], validation_genes),),
+        full_graph.edge_types == 1,
+    ),
 )
+full_graph.pos_val_gd = full_graph.edge_index[:, pos_val]
+full_graph.pos_train_gd = full_graph.edge_index[
+    :, torch.logical_and(torch.logical_not(pos_val), full_graph.edge_types == 1)
+]
+pos_val = torch.logical_and(
+    torch.randint(0, 3, size=len(full_graph.edge_types)) == 0,
+    full_graph.edge_types == 0,
+)
+full_graph.pos_val_gg = full_graph.edge_index[:, pos_val]
+full_graph.pos_train_gg = full_graph.edge_index[
+    :, torch.logical_and(torch.logical_not(pos_val), full_graph.edge_types == 0)
+]
 
-# save split to check it later
-torch.save(full_graph.train_pos_edge_index, "train_ei.pt")
-torch.save(full_graph.val_pos_edge_index, "val_ei.pt")
-torch.save(full_graph.val_neg_edge_index, "val_ei_neg.pt")
+# negatives
+neg = negative_sampling(
+    full_graph.edge_index, full_graph.num_nodes, force_undirected=True
+)
+neg_edge_type = torch.sum(neg > len(node_classes) - torch.sum(node_classes), 0)
+neg_val = torch.logical_or(
+    torch.logical_and(
+        torch.BoolTensor(np.isin(neg[0], validation_genes),), neg_edge_type == 1,
+    ),
+    torch.logical_and(
+        torch.BoolTensor(np.isin(neg[1], validation_genes),), neg_edge_type == 1,
+    ),
+)
+full_graph.neg_val_gd = neg[:, neg_val]
+full_graph.neg_train_gd = neg[
+    :, torch.logical_and(torch.logical_not(neg_val), neg_edge_type == 1)
+]
+neg_val = torch.logical_and(
+    torch.randint(0, 3, size=neg.shape[1]) == 0, neg_edge_type == 0,
+)
+full_graph.neg_val_gg = neg[:, neg_val]
+full_graph.neg_train_gg = full_graph.edge_index[
+    :, torch.logical_and(torch.logical_not(neg_val), neg_edge_type == 0)
+]
 
+# sparse tensor
+total_train = torch.cat((full_graph.pos_train_gg, full_graph.pos_train_gd), 1)
 full_graph.train_adj_t = SparseTensor(
-    row=full_graph.train_pos_with_ppi[0],
-    col=full_graph.train_pos_with_ppi[1],
-    value=torch.ones(len(full_graph.train_pos_with_ppi[1]), dtype=torch.float32),
+    row=total_train[0],
+    col=total_train[1],
+    value=torch.cat(
+        torch.zeros(full_graph.pos_train_gg.shape[1], dtype=torch.long),
+        torch.ones(full_graph.pos_train_gd.shape[1], dtype=torch.long),
+    ),
     sparse_sizes=(len(node_classes), len(node_classes)),
 )
 full_graph.adj_t = SparseTensor(
-    row=torch.cat((edge_index[0], edge_index[1])),
-    col=torch.cat((edge_index[1], edge_index[0])),
-    value=torch.ones(2 * len(edge_index[1]), dtype=torch.float32),
+    row=full_graph.edge_index[0],
+    col=full_graph.edge_index[1],
+    value=full_graph.edge_types,
     sparse_sizes=(len(node_classes), len(node_classes)),
 )
 
