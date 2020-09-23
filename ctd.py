@@ -201,7 +201,7 @@ full_graph.adj_t_gd = SparseTensor(
 mlflow.set_tracking_uri("http://localhost:12345")
 
 with mlflow.start_run():
-    model = gnn.GAE(gae.SimpleEncoder(62, args.dim, len(node_classes)))
+    model = gnn.GAE(gae.CTDEncoder(62, args.dim, torch.sum(node_classes)))
     optimizer = opt.AdamW(
         model.parameters(), args.lr, weight_decay=args.wd, amsgrad=True
     )
