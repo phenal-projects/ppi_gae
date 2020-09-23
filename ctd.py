@@ -1,20 +1,14 @@
 """CTD Gene-Disease GAE training"""
-from operator import pos
 from sys import argv
 import argparse
 
 import numpy as np
-from numpy.core.numeric import full
 
 import torch
 import torch.optim as opt
 import torch_geometric.nn as gnn
 import torch_geometric.data as gdata
-from torch_geometric.utils import (
-    train_test_split_edges,
-    remove_self_loops,
-    negative_sampling,
-)
+from torch_geometric.utils import negative_sampling
 from torch_sparse import SparseTensor
 
 import mlflow
@@ -33,18 +27,26 @@ def construct_parser():
     parser = argparse.ArgumentParser(description="Train HGAE.")
     parser.add_argument("lr", type=float, help="learning rate")
     parser.add_argument("wd", type=float, help="weight decay")
-    parser.add_argument("epochs", type=int, help="the number of epochs to train")
+    parser.add_argument(
+        "epochs", type=int, help="the number of epochs to train"
+    )
     parser.add_argument("dim", type=int, help="the size of embeddings")
     parser.add_argument("device", type=str, help="cuda or cpu")
     parser.add_argument("seed", type=int, help="random seed for repruduction")
 
     # Paths
-    parser.add_argument("edges", type=str, help="a path to the edge list (npy)")
     parser.add_argument(
-        "features", type=str, help="a path to the features of the protein nodes (npy)",
+        "edges", type=str, help="a path to the edge list (npy)"
     )
     parser.add_argument(
-        "node_classes", type=str, help="a path to the expressions data file (npy)",
+        "features",
+        type=str,
+        help="a path to the features of the protein nodes (npy)",
+    )
+    parser.add_argument(
+        "node_classes",
+        type=str,
+        help="a path to the expressions data file (npy)",
     )
     return parser
 
@@ -83,7 +85,9 @@ np.random.seed(args.seed)
 # load the data
 edge_index = torch.LongTensor(np.load(args.edges))
 node_classes = torch.LongTensor(np.load(args.node_classes))
-edge_types = torch.sum(edge_index >= (len(node_classes) - torch.sum(node_classes)), 0)
+edge_types = torch.sum(
+    edge_index >= (len(node_classes) - torch.sum(node_classes)), 0
+)
 features = torch.FloatTensor(np.load(args.features))
 
 
@@ -122,7 +126,8 @@ pos_val = torch.logical_or(
 )
 full_graph.pos_val_gd = full_graph.edge_index[:, pos_val]
 full_graph.pos_train_gd = full_graph.edge_index[
-    :, torch.logical_and(torch.logical_not(pos_val), full_graph.edge_types == 1)
+    :,
+    torch.logical_and(torch.logical_not(pos_val), full_graph.edge_types == 1),
 ]
 pos_val = torch.logical_and(
     torch.randint(0, 3, size=(len(full_graph.edge_types),)) == 0,
@@ -130,20 +135,25 @@ pos_val = torch.logical_and(
 )
 full_graph.pos_val_gg = full_graph.edge_index[:, pos_val]
 full_graph.pos_train_gg = full_graph.edge_index[
-    :, torch.logical_and(torch.logical_not(pos_val), full_graph.edge_types == 0)
+    :,
+    torch.logical_and(torch.logical_not(pos_val), full_graph.edge_types == 0),
 ]
 
 # negatives
 neg = negative_sampling(
     full_graph.edge_index, full_graph.num_nodes, force_undirected=True
 )
-neg_edge_type = torch.sum(neg >= (len(node_classes) - torch.sum(node_classes)), 0)
+neg_edge_type = torch.sum(
+    neg >= (len(node_classes) - torch.sum(node_classes)), 0
+)
 neg_val = torch.logical_or(
     torch.logical_and(
-        torch.BoolTensor(np.isin(neg[0], validation_genes),), neg_edge_type == 1,
+        torch.BoolTensor(np.isin(neg[0], validation_genes),),
+        neg_edge_type == 1,
     ),
     torch.logical_and(
-        torch.BoolTensor(np.isin(neg[1], validation_genes),), neg_edge_type == 1,
+        torch.BoolTensor(np.isin(neg[1], validation_genes),),
+        neg_edge_type == 1,
     ),
 )
 full_graph.neg_val_gd = neg[:, neg_val]
@@ -174,20 +184,24 @@ full_graph.train_adj_t_gd = SparseTensor(
 full_graph.adj_t_gg = SparseTensor(
     row=full_graph.edge_index[0][full_graph.edge_types == 0],
     col=full_graph.edge_index[1][full_graph.edge_types == 0],
-    value=torch.ones(torch.sum(full_graph.edge_types == 0).item(), dtype=torch.float),
+    value=torch.ones(
+        torch.sum(full_graph.edge_types == 0).item(), dtype=torch.float
+    ),
     sparse_sizes=(len(node_classes), len(node_classes)),
 )
 full_graph.adj_t_gd = SparseTensor(
     row=full_graph.edge_index[0][full_graph.edge_types == 1],
     col=full_graph.edge_index[1][full_graph.edge_types == 1],
-    value=torch.ones(torch.sum(full_graph.edge_types == 1).item(), dtype=torch.float),
+    value=torch.ones(
+        torch.sum(full_graph.edge_types == 1).item(), dtype=torch.float
+    ),
     sparse_sizes=(len(node_classes), len(node_classes)),
 )
 
 mlflow.set_tracking_uri("http://localhost:12345")
 
 with mlflow.start_run():
-    model = gnn.GAE(gae.CTDEncoder(62, args.dim, torch.sum(node_classes)))
+    model = gnn.GAE(gae.SimpleEncoder(62, args.dim, len(node_classes)))
     optimizer = opt.AdamW(
         model.parameters(), args.lr, weight_decay=args.wd, amsgrad=True
     )
@@ -195,13 +209,22 @@ with mlflow.start_run():
         optimizer, factor=0.5, patience=20, verbose=True
     )
     model = gae.train_ctd_gae(
-        model, [full_graph], optimizer, scheduler, args.device, args.epochs, callback,
+        model,
+        [full_graph],
+        optimizer,
+        scheduler,
+        args.device,
+        args.epochs,
+        callback,
     )
     torch.save(model, "./model.pt")
 
     model = torch.load("./best_model.pt")
     mlflow.pytorch.log_model(
-        model, "unsupervised_ctd_model.pt", conda_env="conda.yaml", code_paths=["./"],
+        model,
+        "unsupervised_ctd_model.pt",
+        conda_env="conda.yaml",
+        code_paths=["./"],
     )
 
     # full graph testing
