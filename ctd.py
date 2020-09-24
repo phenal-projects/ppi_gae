@@ -220,8 +220,21 @@ with mlflow.start_run():
             full_graph.pos_val_gd.to(args.device),
             full_graph.neg_val_gd.to(args.device),
         )
-    mlflow.log_metric("Final AUC GD", auc)
-    mlflow.log_metric("Final AP GD", ap)
+        mlflow.log_metric("Final full AUC GD", auc)
+        mlflow.log_metric("Final full AP GD", ap)
+        z = model.encode(
+            full_graph.feats.to(args.device),
+            full_graph.train_adj_t_gg.to(args.device),
+            full_graph.train_adj_t_gd.to(args.device),
+            full_graph.adj_t_dd.to(args.device),
+        )
+        auc, ap = model.test(
+            z,
+            full_graph.pos_val_gd.to(args.device),
+            full_graph.neg_val_gd.to(args.device),
+        )
+        mlflow.log_metric("Chosen model AUC GD", auc)
+        mlflow.log_metric("Chosen model AP GD", ap)
 
     # encode
     embeddings = gae.encode_ctd(model, full_graph, args.device)
