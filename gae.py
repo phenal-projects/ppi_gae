@@ -29,9 +29,7 @@ class Encoder(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels * 5
         self.conv1 = gnn.GCNConv(in_channels, 2 * out_channels, cached=False)
-        self.conv2 = gnn.GCNConv(
-            2 * out_channels, 2 * out_channels, cached=False
-        )
+        self.conv2 = gnn.GCNConv(2 * out_channels, 2 * out_channels, cached=False)
         self.conv3 = gnn.GCNConv(2 * out_channels, out_channels, cached=False)
 
     def forward(self, x, edge_index):
@@ -58,35 +56,35 @@ class CTDEncoder(nn.Module):
         self.emb = nn.parameter.Parameter(
             torch.rand((drug_nodes, in_channels)), requires_grad=True
         )
-        self.conv1_gg = gnn.GCNConv(
-            in_channels, 2 * out_channels, cached=False
-        )
-        self.conv2_gg = gnn.GCNConv(
-            2 * out_channels, 4 * out_channels, cached=False
-        )
-        self.conv3_gg = gnn.GCNConv(
-            4 * out_channels, out_channels, cached=False
-        )
-        self.conv1_gd = gnn.GCNConv(
-            in_channels, 2 * out_channels, cached=False
-        )
-        self.conv2_gd = gnn.GCNConv(
-            2 * out_channels, 4 * out_channels, cached=False
-        )
-        self.conv3_gd = gnn.GCNConv(
-            4 * out_channels, out_channels, cached=False
-        )
+        self.conv1_gg = gnn.GCNConv(in_channels, 2 * out_channels, cached=False)
+        self.conv2_gg = gnn.GCNConv(2 * out_channels, 4 * out_channels, cached=False)
+        self.conv3_gg = gnn.GCNConv(4 * out_channels, out_channels, cached=False)
+        self.conv1_gd = gnn.GCNConv(in_channels, 2 * out_channels, cached=False)
+        self.conv2_gd = gnn.GCNConv(2 * out_channels, 4 * out_channels, cached=False)
+        self.conv3_gd = gnn.GCNConv(4 * out_channels, out_channels, cached=False)
+        self.conv1_dd = gnn.GCNConv(in_channels, 2 * out_channels, cached=False)
+        self.conv2_dd = gnn.GCNConv(in_channels, 4 * out_channels, cached=False)
+        self.conv3_dd = gnn.GCNConv(in_channels, out_channels, cached=False)
 
-    def forward(self, x, adj_t_gg, adj_t_gd):
+    def forward(self, x, adj_t_gg, adj_t_gd, adj_t_dd):
         """Calculates embeddings"""
-        x1 = self.conv1_gg(torch.cat((x, self.emb)), adj_t_gg) + self.conv1_gd(
-            torch.cat((x, self.emb)), adj_t_gd
+        x0 = torch.cat((x, self.emb))
+        x1 = (
+            self.conv1_gg(x0, adj_t_gg)
+            + self.conv1_gd(x0, adj_t_gd)
+            + self.conv1_dd(x0, adj_t_dd)
         )
-        x2 = self.conv2_gg(F.relu(x1), adj_t_gg) + self.conv2_gd(
-            F.relu(x1), adj_t_gd
+        x1_0 = F.leaky_relu(x1)
+        x2 = (
+            self.conv2_gg(x1_0, adj_t_gg)
+            + self.conv2_gd(x1_0, adj_t_gd)
+            + self.conv2_dd(x1_0, adj_t_dd)
         )
-        x3 = self.conv3_gg(F.relu(x2), adj_t_gg) + self.conv3_gd(
-            F.relu(x2), adj_t_gd
+        x2_0 = F.leaky_relu(x2)
+        x3 = (
+            self.conv3_gg(x2_0, adj_t_gg)
+            + self.conv3_gd(x2_0, adj_t_gd)
+            + self.conv3_dd(x2_0, adj_t_dd)
         )
         return torch.cat((x1, x2, x3), -1)
 
@@ -114,9 +112,7 @@ class SimpleEncoder(nn.Module):
         return self.emb
 
 
-def train_gae(
-    model, loader, optimizer, scheduler, device, epochs, callback=None
-):
+def train_gae(model, loader, optimizer, scheduler, device, epochs, callback=None):
     """Trains Graph Autoencoder
 
     Parameters
@@ -238,9 +234,7 @@ def finetune_gae(
             z = model(x, train_pos_adj)
             loss = loss_fn(
                 z[train_mask],
-                prob_labels(graph.y[train_mask], graph.probs[train_mask]).to(
-                    device
-                ),
+                prob_labels(graph.y[train_mask], graph.probs[train_mask]).to(device),
             )
             val_loss = loss_fn(z[val_mask], graph.y[val_mask].to(device),)
             loss.backward()
@@ -268,9 +262,7 @@ def encode(model, graph, device):
     return z.cpu().numpy()
 
 
-def train_ctd_gae(
-    model, loader, optimizer, scheduler, device, epochs, callback=None
-):
+def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=None):
     """Trains CTD Graph Autoencoder
 
     Parameters
@@ -309,21 +301,20 @@ def train_ctd_gae(
 
             train_pos_adj_gg = graph.train_adj_t_gg.to(device)
             train_pos_adj_gd = graph.train_adj_t_gd.to(device)
+            adj_dd = graph.adj_t_dd.to(device)
             x = graph.feats.to(device)
 
             model.train()
             optimizer.zero_grad()
             graph = graph
-            z = model.encode(x, train_pos_adj_gg, train_pos_adj_gd)
+            z = model.encode(x, train_pos_adj_gg, train_pos_adj_gd, adj_dd)
             loss = (
                 graph.pos_train_gg.shape[1]
                 / (graph.pos_train_gd.shape[1] + graph.pos_train_gg.shape[1])
                 * F.binary_cross_entropy(
                     model.decode(z, graph.pos_train_gd.to(device)),
                     torch.ones(
-                        graph.pos_train_gd.shape[1],
-                        dtype=torch.float32,
-                        device=device,
+                        graph.pos_train_gd.shape[1], dtype=torch.float32, device=device,
                     ),
                 )
             )
@@ -333,9 +324,7 @@ def train_ctd_gae(
                 * F.binary_cross_entropy(
                     model.decode(z, graph.neg_train_gd.to(device)),
                     torch.zeros(
-                        graph.neg_train_gd.shape[1],
-                        dtype=torch.float32,
-                        device=device,
+                        graph.neg_train_gd.shape[1], dtype=torch.float32, device=device,
                     ),
                 )
             )
@@ -345,9 +334,7 @@ def train_ctd_gae(
                 * F.binary_cross_entropy(
                     model.decode(z, graph.pos_train_gg.to(device)),
                     torch.ones(
-                        graph.pos_train_gg.shape[1],
-                        dtype=torch.float32,
-                        device=device,
+                        graph.pos_train_gg.shape[1], dtype=torch.float32, device=device,
                     ),
                 )
             )
@@ -357,9 +344,7 @@ def train_ctd_gae(
                 * F.binary_cross_entropy(
                     model.decode(z, graph.neg_train_gg.to(device)),
                     torch.zeros(
-                        graph.neg_train_gg.shape[1],
-                        dtype=torch.float32,
-                        device=device,
+                        graph.neg_train_gg.shape[1], dtype=torch.float32, device=device,
                     ),
                 )
             )
@@ -369,18 +354,14 @@ def train_ctd_gae(
 
             model.eval()
             with torch.no_grad():
-                z = model.encode(x, train_pos_adj_gg, train_pos_adj_gd)
+                z = model.encode(x, train_pos_adj_gg, train_pos_adj_gd, adj_dd)
                 auc, ap = model.test(
-                    z,
-                    graph.pos_val_gd.to(device),
-                    graph.neg_val_gd.to(device),
+                    z, graph.pos_val_gd.to(device), graph.neg_val_gd.to(device),
                 )
                 aucs_gd.append(auc)
                 aps_gd.append(ap)
                 auc, ap = model.test(
-                    z,
-                    graph.pos_val_gg.to(device),
-                    graph.neg_val_gg.to(device),
+                    z, graph.pos_val_gg.to(device), graph.neg_val_gg.to(device),
                 )
                 aucs_gg.append(auc)
                 aps_gg.append(ap)
@@ -395,8 +376,7 @@ def train_ctd_gae(
 
         if callback is not None:
             if callback(
-                model,
-                (mean_auc_gd, mean_ap_gd, mean_auc_gg, mean_ap_gg, mean_loss),
+                model, (mean_auc_gd, mean_ap_gd, mean_auc_gg, mean_ap_gg, mean_loss),
             ):
                 return model
     return model
@@ -410,5 +390,6 @@ def encode_ctd(model, graph, device):
             graph.feats.to(device),
             graph.adj_t_gg.to(device),
             graph.adj_t_gd.to(device),
+            graph.adj_t_dd.to(device),
         )
     return z.detach().cpu().numpy()
