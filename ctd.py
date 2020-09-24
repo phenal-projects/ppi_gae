@@ -8,7 +8,7 @@ import torch
 import torch.optim as opt
 import torch_geometric.nn as gnn
 import torch_geometric.data as gdata
-from torch_geometric.utils import negative_sampling
+from torch_geometric import utils
 from torch_sparse import SparseTensor
 
 import mlflow
@@ -75,7 +75,7 @@ torch.backends.cudnn.benchmark = False
 np.random.seed(args.seed)
 
 # load the data
-edge_index = torch.LongTensor(np.load(args.edges))
+edge_index = utils.remove_self_loops(torch.LongTensor(np.load(args.edges)))[0]
 node_classes = torch.LongTensor(np.load(args.node_classes))
 edge_types = torch.sum(edge_index >= (len(node_classes) - torch.sum(node_classes)), 0)
 features = torch.FloatTensor(np.load(args.features))
@@ -128,9 +128,11 @@ full_graph.pos_train_gg = full_graph.edge_index[
 ]
 
 # negatives
-neg = negative_sampling(
-    full_graph.edge_index, full_graph.num_nodes, force_undirected=True
+# utils.negative_sampling sometimes produces edges with unexisting nodes. So here is a small patch.
+neg = utils.negative_sampling(
+    full_graph.edge_index, num_nodes=full_graph.num_nodes, force_undirected=True
 )
+neg = neg[:, torch.sum(neg >= len(node_classes), 0) == 0]  # PATCH
 neg_edge_type = torch.sum(neg >= (len(node_classes) - torch.sum(node_classes)), 0)
 neg_val = torch.logical_or(
     torch.logical_and(

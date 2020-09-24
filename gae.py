@@ -52,41 +52,30 @@ class CTDEncoder(nn.Module):
         """
         super(CTDEncoder, self).__init__()
         self.in_channels = in_channels
-        self.out_channels = out_channels * 5
+        self.out_channels = out_channels * 4
         self.emb = nn.parameter.Parameter(
             torch.rand((drug_nodes, in_channels)), requires_grad=True
         )
-        self.conv1_gg = gnn.GCNConv(in_channels, 2 * out_channels, cached=False)
-        self.conv2_gg = gnn.GCNConv(2 * out_channels, 4 * out_channels, cached=False)
-        self.conv3_gg = gnn.GCNConv(4 * out_channels, out_channels, cached=False)
-        self.conv1_gd = gnn.GCNConv(in_channels, 2 * out_channels, cached=False)
-        self.conv2_gd = gnn.GCNConv(2 * out_channels, 4 * out_channels, cached=False)
-        self.conv3_gd = gnn.GCNConv(4 * out_channels, out_channels, cached=False)
-        self.conv1_dd = gnn.GCNConv(in_channels, 2 * out_channels, cached=False)
-        self.conv2_dd = gnn.GCNConv(in_channels, 4 * out_channels, cached=False)
-        self.conv3_dd = gnn.GCNConv(in_channels, out_channels, cached=False)
+        self.conv1_gg = gnn.GCNConv(in_channels, out_channels, cached=False)
+        self.conv2_gg = gnn.GCNConv(out_channels, 2 * out_channels, cached=False)
+        self.conv3_gg = gnn.GCNConv(2 * out_channels, 4 * out_channels, cached=False)
+        self.conv_gd = gnn.GCNConv(4 * out_channels, 4 * out_channels, cached=False)
+        self.conv1_dd = gnn.GCNConv(in_channels, out_channels, cached=False)
+        self.conv2_dd = gnn.GCNConv(out_channels, 2 * out_channels, cached=False)
+        self.conv3_dd = gnn.GCNConv(2 * out_channels, 4 * out_channels, cached=False)
 
     def forward(self, x, adj_t_gg, adj_t_gd, adj_t_dd):
         """Calculates embeddings"""
         x0 = torch.cat((x, self.emb))
-        x1 = (
-            self.conv1_gg(x0, adj_t_gg)
-            + self.conv1_gd(x0, adj_t_gd)
-            + self.conv1_dd(x0, adj_t_dd)
+        x1 = self.conv1_gg(x0, adj_t_gg) + self.conv1_dd(x0, adj_t_dd)
+        x2 = self.conv2_gg(F.leaky_relu(x1), adj_t_gg) + self.conv2_dd(
+            F.leaky_relu(x1), adj_t_gg
         )
-        x1_0 = F.leaky_relu(x1)
-        x2 = (
-            self.conv2_gg(x1_0, adj_t_gg)
-            + self.conv2_gd(x1_0, adj_t_gd)
-            + self.conv2_dd(x1_0, adj_t_dd)
+        x3 = self.conv3_gg(F.leaky_relu(x2), adj_t_gg) + self.conv3_dd(
+            F.leaky_relu(x2), adj_t_dd
         )
-        x2_0 = F.leaky_relu(x2)
-        x3 = (
-            self.conv3_gg(x2_0, adj_t_gg)
-            + self.conv3_gd(x2_0, adj_t_gd)
-            + self.conv3_dd(x2_0, adj_t_dd)
-        )
-        return torch.cat((x1, x2, x3), -1)
+        x4 = self.conv_gd(F.leaky_relu(x3), adj_t_gd)
+        return x3 + x4
 
 
 class SimpleEncoder(nn.Module):
