@@ -14,6 +14,76 @@ torch.backends.cudnn.benchmark = False
 np.random.seed(42)
 
 
+class WRGCNConv(gnn.MessagePassing):
+    def __init__(self, in_channels, out_channels, num_relations):
+        """WRGCN layer
+
+        Parameters
+        ----------
+        in_channels : int
+            The number of input dimensions
+        out_channels : int
+            The number of output dimensions
+        num_relations : int
+            The number of edge types
+        """
+        super(WRGCNConv, self).__init__(aggr="mean", node_dim=0)
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.num_relations = num_relations
+
+        # parameters
+        self.weight = nn.Parameter(
+            torch.Tensor(num_relations, in_channels, out_channels)
+        )
+        self.root = nn.Parameter(torch.Tensor(in_channels, out_channels))
+        self.bias = nn.Parameter(torch.Tensor(out_channels))
+
+    def reset_parameters(self):
+        glorot(self.weight)
+        glorot(self.root)
+        zeros(self.bias)
+
+    def forward(self, x, adj, edge_type):
+        """Forward-passing
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            The node features
+        adj : torch_sparse.SparseMatrix
+            Graph's adjacency matrix
+        edge_type : torch.LongTensor
+            The types of the edges
+
+        Returns
+        -------
+        torch.Tensor
+            The new node features
+        """
+        out = x @ self.root + self.bias
+        for i in range(self.num_relations):
+            tmp = masked_select_nnz(adj, edge_type == i, layout="coo")
+            h = self.propagate(tmp, x=x, size=(x.size(0), x.size(0)))
+            out += h @ self.weight[i]
+        return out
+
+    def message(self, x):
+        return x
+
+    def message_and_aggregate(self, adj_t, x):
+        adj_t = adj_t.set_value(None, layout=None)
+        return matmul(adj_t, x, reduce="mean")
+
+    def __repr__(self):
+        return "{}({}, {}, num_relations={})".format(
+            self.__class__.__name__,
+            self.in_channels,
+            self.out_channels,
+            self.num_relations,
+        )
+
+
 class Encoder(nn.Module):
     def __init__(self, in_channels, out_channels):
         """Initializes the GCN encoder
