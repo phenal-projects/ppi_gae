@@ -30,7 +30,7 @@ class WRGCNConv(gnn.MessagePassing):
         num_relations : int
             The number of edge types
         """
-        super(WRGCNConv, self).__init__(aggr="mean", node_dim=0)
+        super(WRGCNConv, self).__init__(aggr="add", node_dim=0)
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.num_relations = num_relations
@@ -79,7 +79,7 @@ class WRGCNConv(gnn.MessagePassing):
 
     def message_and_aggregate(self, adj_t, x):
         adj_t = adj_t.set_value(None, layout=None)
-        return matmul(adj_t, x, reduce="mean")
+        return matmul(adj_t, x, reduce="add")
 
     def __repr__(self):
         return "{}({}, {}, num_relations={})".format(
