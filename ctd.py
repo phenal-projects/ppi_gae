@@ -201,7 +201,7 @@ mlflow.set_tracking_uri("http://localhost:12345")
 
 with mlflow.start_run():
     model = gnn.GAE(gae.CTDEncoder(62, args.dim, torch.sum(node_classes)))
-    optimizer = opt.SGD(model.parameters(), args.lr, momentum=0.9)
+    optimizer = opt.AdamW(model.parameters(), args.lr, weight_decay=args.wd)
     scheduler = opt.lr_scheduler.ReduceLROnPlateau(
         optimizer, factor=0.5, patience=100, verbose=True
     )
