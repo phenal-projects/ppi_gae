@@ -96,7 +96,7 @@ validation_genes_mask = torch.randint(
 )
 validation_genes = torch.arange(
     0, len(node_classes) - torch.sum(node_classes), dtype=torch.long
-)[validation_genes_mask < 35]
+)[validation_genes_mask < 20]
 
 full_graph = gdata.Data(
     edge_index=edge_index,
@@ -201,11 +201,9 @@ mlflow.set_tracking_uri("http://localhost:12345")
 
 with mlflow.start_run():
     model = gnn.GAE(gae.CTDEncoder(62, args.dim, torch.sum(node_classes)))
-    optimizer = opt.AdamW(
-        model.parameters(), args.lr, weight_decay=args.wd, amsgrad=True
-    )
+    optimizer = opt.SGD(model.parameters(), args.lr, momentum=0.9)
     scheduler = opt.lr_scheduler.ReduceLROnPlateau(
-        optimizer, factor=0.5, patience=20, verbose=True
+        optimizer, factor=0.5, patience=100, verbose=True
     )
     model = gae.train_ctd_gae(
         model, [full_graph], optimizer, scheduler, args.device, args.epochs, callback,
