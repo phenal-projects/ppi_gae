@@ -17,7 +17,7 @@ import mlflow.pytorch
 import gae
 
 
-BEST_AUC = 0
+BEST_AP = 0
 ESTOP_COUNTER = 0
 EPOCH_COUNTER = 0
 
@@ -45,12 +45,12 @@ def construct_parser():
 
 def callback(model, auc_ap_loss):
     """A callback function for printing training stats"""
-    global BEST_AUC
+    global BEST_AP
     global ESTOP_COUNTER
     global EPOCH_COUNTER
     auc_gd, ap_gd, auc_gg, ap_gg, loss = auc_ap_loss
-    if BEST_AUC < ap_gd:
-        BEST_AUC = ap_gd
+    if BEST_AP < ap_gd:
+        BEST_AP = ap_gd
         ESTOP_COUNTER = 0
         torch.save(model, "./best_model.pt")
     ESTOP_COUNTER += 1
