@@ -81,7 +81,7 @@ edge_index = torch.cat((edge_index, edge_index[[1, 0]]), 1)
 node_classes = torch.LongTensor(np.load(args.node_classes))
 
 edge_types = torch.sum(edge_index >= (len(node_classes) - torch.sum(node_classes)), 0)
-# edge_types += torch.logical_and(edge_types == 2, edge_index[0] > edge_index[1])
+edge_types += torch.logical_and(edge_types == 2, edge_index[0] > edge_index[1])
 features = torch.FloatTensor(np.load(args.features))
 
 # sanity check
@@ -162,6 +162,7 @@ train_edge_index = torch.cat(
         full_graph.pos_train_gg,
         full_graph.pos_train_gd,
         full_graph.edge_index[:, full_graph.edge_types == 2],
+        full_graph.edge_index[:, full_graph.edge_types == 3],
     ),
     1,
 )
@@ -182,6 +183,11 @@ full_graph.train_edge_types = (
         > (len(node_classes) - torch.sum(node_classes))
     ).long()
 )
+full_graph.train_edge_types += torch.logical_and(
+    full_graph.train_adj_t.storage.row() < full_graph.train_adj_t.storage.col(),
+    full_graph.train_edge_types == 2,
+)
+
 full_graph.adj_t = SparseTensor(
     row=full_graph.edge_index[0],
     col=full_graph.edge_index[1],
@@ -195,6 +201,10 @@ full_graph.edge_types = (
     + (
         full_graph.adj_t.storage.col() > (len(node_classes) - torch.sum(node_classes))
     ).long()
+)
+full_graph.edge_types += torch.logical_and(
+    full_graph.adj_t.storage.row() < full_graph.adj_t.storage.col(),
+    full_graph.edge_types == 2,
 )
 
 mlflow.set_tracking_uri("http://localhost:12345")
