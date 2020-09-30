@@ -127,7 +127,7 @@ class CTDEncoder(nn.Module):
         """
         super(CTDEncoder, self).__init__()
         self.in_channels = in_channels
-        self.out_channels = out_channels * 7
+        self.out_channels = out_channels
         self.emb = nn.parameter.Parameter(
             torch.rand((dis_nodes, in_channels)), requires_grad=True
         )
@@ -142,7 +142,7 @@ class CTDEncoder(nn.Module):
         x1 = self.norm1(self.conv1(torch.cat((x, self.emb), 0), adj_t, edge_types))
         x2 = self.norm2(self.conv2(F.relu(x1), adj_t, edge_types))
         x3 = self.conv3(F.relu(x2), adj_t, edge_types)
-        return torch.cat((x1, x2, x3), 1)
+        return x3
 
 
 class SimpleEncoder(nn.Module):
