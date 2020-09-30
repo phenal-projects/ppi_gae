@@ -38,11 +38,11 @@ entry_points:
             python finetuning.py {lr} {wd} {epochs} {k} {edge_cut} {target} {tissue} {device} {seed} {model} {edges} {ids} {feats} {expr}
     ctd:
         parameters:
-            lr: {type: float, default: 0.005}
-            wd: {type: float, default: 0.002}
-            epochs: {type: int, default: 500}
+            lr: {type: float, default: 0.002}
+            wd: {type: float, default: 0.0001}
+            epochs: {type: int, default: 1000}
             dim: {type: int, default: 32}
-            device: {type: string, default: 'cpu'}
+            device: {type: string, default: 'cuda'}
             seed: {type: int, default: 42}
             edges: path
             features: path

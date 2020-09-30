@@ -6,6 +6,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric import nn as gnn
+from torch_geometric.nn.inits import glorot, zeros
+from torch_sparse import matmul, masked_select_nnz
+from torch_geometric.nn.conv.gcn_conv import gcn_norm
 
 # deterministic behaviour
 torch.manual_seed(42)
@@ -38,6 +41,7 @@ class WRGCNConv(gnn.MessagePassing):
         )
         self.root = nn.Parameter(torch.Tensor(in_channels, out_channels))
         self.bias = nn.Parameter(torch.Tensor(out_channels))
+        self.reset_parameters()
 
     def reset_parameters(self):
         glorot(self.weight)
@@ -61,6 +65,8 @@ class WRGCNConv(gnn.MessagePassing):
         torch.Tensor
             The new node features
         """
+        # adj normalization. Does not use edge classes!
+        adj = gcn_norm(adj, num_nodes=x.size(-2), add_self_loops=False)
         out = x @ self.root + self.bias
         for i in range(self.num_relations):
             tmp = masked_select_nnz(adj, edge_type == i, layout="coo")
@@ -68,8 +74,8 @@ class WRGCNConv(gnn.MessagePassing):
             out += h @ self.weight[i]
         return out
 
-    def message(self, x):
-        return x
+    def message(self, x_j):
+        return x_j
 
     def message_and_aggregate(self, adj_t, x):
         adj_t = adj_t.set_value(None, layout=None)
@@ -110,7 +116,7 @@ class Encoder(nn.Module):
 
 
 class CTDEncoder(nn.Module):
-    def __init__(self, in_channels, out_channels, drug_nodes):
+    def __init__(self, in_channels, out_channels, dis_nodes):
         """Initializes the GCN encoder with encoded embeddings
 
         Parameters
@@ -122,30 +128,20 @@ class CTDEncoder(nn.Module):
         """
         super(CTDEncoder, self).__init__()
         self.in_channels = in_channels
-        self.out_channels = out_channels * 4
+        self.out_channels = out_channels * 3
         self.emb = nn.parameter.Parameter(
-            torch.rand((drug_nodes, in_channels)), requires_grad=True
+            torch.rand((dis_nodes, in_channels)), requires_grad=True
         )
-        self.conv1_gg = gnn.GCNConv(in_channels, out_channels, cached=False)
-        self.conv2_gg = gnn.GCNConv(out_channels, 2 * out_channels, cached=False)
-        self.conv3_gg = gnn.GCNConv(2 * out_channels, 4 * out_channels, cached=False)
-        self.conv_gd = gnn.GCNConv(4 * out_channels, 4 * out_channels, cached=False)
-        self.conv1_dd = gnn.GCNConv(in_channels, out_channels, cached=False)
-        self.conv2_dd = gnn.GCNConv(out_channels, 2 * out_channels, cached=False)
-        self.conv3_dd = gnn.GCNConv(2 * out_channels, 4 * out_channels, cached=False)
+        self.conv1 = WRGCNConv(in_channels, 2 * out_channels, 3)
+        self.conv2 = WRGCNConv(2 * out_channels, 4 * out_channels, 3)
+        self.conv3 = WRGCNConv(4 * out_channels, out_channels, 3)
 
-    def forward(self, x, adj_t_gg, adj_t_gd, adj_t_dd):
+    def forward(self, x, adj_t, edge_types):
         """Calculates embeddings"""
-        x0 = torch.cat((x, self.emb))
-        x1 = self.conv1_gg(x0, adj_t_gg) + self.conv1_dd(x0, adj_t_dd)
-        x2 = self.conv2_gg(F.leaky_relu(x1), adj_t_gg) + self.conv2_dd(
-            F.leaky_relu(x1), adj_t_gg
-        )
-        x3 = self.conv3_gg(F.leaky_relu(x2), adj_t_gg) + self.conv3_dd(
-            F.leaky_relu(x2), adj_t_dd
-        )
-        x4 = self.conv_gd(F.leaky_relu(x3), adj_t_gd)
-        return x3 + x4
+        x1 = self.conv1(torch.cat((x, self.emb), 0), adj_t, edge_types)
+        x2 = self.conv2(F.leaky_relu(x1), adj_t, edge_types)
+        x3 = self.conv3(F.leaky_relu(x2), adj_t, edge_types)
+        return torch.cat((x3, x1), 1)
 
 
 class SimpleEncoder(nn.Module):
@@ -358,15 +354,14 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
     for epoch in range(epochs):
         for graph in loader:
 
-            train_pos_adj_gg = graph.train_adj_t_gg.to(device)
-            train_pos_adj_gd = graph.train_adj_t_gd.to(device)
-            adj_dd = graph.adj_t_dd.to(device)
+            train_pos_adj = graph.train_adj_t.to(device)
+            edge_types = graph.train_edge_types.to(device)
             x = graph.feats.to(device)
 
             model.train()
             optimizer.zero_grad()
             graph = graph
-            z = model.encode(x, train_pos_adj_gg, train_pos_adj_gd, adj_dd)
+            z = model.encode(x, train_pos_adj, edge_types)
             loss = (
                 graph.pos_train_gg.shape[1]
                 / (graph.pos_train_gd.shape[1] + graph.pos_train_gg.shape[1])
@@ -387,33 +382,33 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
                     ),
                 )
             )
-            loss += (
-                graph.pos_train_gd.shape[1]
-                / (graph.pos_train_gd.shape[1] + graph.pos_train_gg.shape[1])
-                * F.binary_cross_entropy(
-                    model.decode(z, graph.pos_train_gg.to(device)),
-                    torch.ones(
-                        graph.pos_train_gg.shape[1], dtype=torch.float32, device=device,
-                    ),
-                )
-            )
-            loss += (
-                graph.pos_train_gd.shape[1]
-                / (graph.pos_train_gd.shape[1] + graph.pos_train_gg.shape[1])
-                * F.binary_cross_entropy(
-                    model.decode(z, graph.neg_train_gg.to(device)),
-                    torch.zeros(
-                        graph.neg_train_gg.shape[1], dtype=torch.float32, device=device,
-                    ),
-                )
-            )
+            # loss += (
+            #    graph.pos_train_gd.shape[1]
+            #    / (graph.pos_train_gd.shape[1] + graph.pos_train_gg.shape[1])
+            #    * F.binary_cross_entropy(
+            #        model.decode(z, graph.pos_train_gg.to(device)),
+            #        torch.ones(
+            #            graph.pos_train_gg.shape[1], dtype=torch.float32, device=device,
+            #        ),
+            #    )
+            # )
+            # loss += (
+            #    graph.pos_train_gd.shape[1]
+            #    / (graph.pos_train_gd.shape[1] + graph.pos_train_gg.shape[1])
+            #    * F.binary_cross_entropy(
+            #        model.decode(z, graph.neg_train_gg.to(device)),
+            #        torch.zeros(
+            #            graph.neg_train_gg.shape[1], dtype=torch.float32, device=device,
+            #        ),
+            #    )
+            # )
             loss.backward()
             optimizer.step()
             losses.append(loss.item() / 2)
 
             model.eval()
             with torch.no_grad():
-                z = model.encode(x, train_pos_adj_gg, train_pos_adj_gd, adj_dd)
+                z = model.encode(x, train_pos_adj, edge_types)
                 auc, ap = model.test(
                     z, graph.pos_val_gd.to(device), graph.neg_val_gd.to(device),
                 )
@@ -446,9 +441,6 @@ def encode_ctd(model, graph, device):
     model = model.to(device)
     with torch.no_grad():
         z = model.encode(
-            graph.feats.to(device),
-            graph.adj_t_gg.to(device),
-            graph.adj_t_gd.to(device),
-            graph.adj_t_dd.to(device),
+            graph.feats.to(device), graph.adj_t.to(device), graph.edge_types.to(device),
         )
     return z.detach().cpu().numpy()

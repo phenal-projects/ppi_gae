@@ -49,8 +49,8 @@ def callback(model, auc_ap_loss):
     global ESTOP_COUNTER
     global EPOCH_COUNTER
     auc_gd, ap_gd, auc_gg, ap_gg, loss = auc_ap_loss
-    if BEST_AUC < (auc_gd + auc_gg) / 2:
-        BEST_AUC = (auc_gd + auc_gg) / 2
+    if BEST_AUC < ap_gd:
+        BEST_AUC = ap_gd
         ESTOP_COUNTER = 0
         torch.save(model, "./best_model.pt")
     ESTOP_COUNTER += 1
@@ -76,10 +76,13 @@ np.random.seed(args.seed)
 
 # load the data
 edge_index = utils.remove_self_loops(torch.LongTensor(np.load(args.edges)))[0]
-node_classes = torch.LongTensor(np.load(args.node_classes))
-edge_types = torch.sum(edge_index >= (len(node_classes) - torch.sum(node_classes)), 0)
-features = torch.FloatTensor(np.load(args.features))
+edge_index = torch.cat((edge_index, edge_index[[1, 0]]), 1)
 
+node_classes = torch.LongTensor(np.load(args.node_classes))
+
+edge_types = torch.sum(edge_index >= (len(node_classes) - torch.sum(node_classes)), 0)
+# edge_types += torch.logical_and(edge_types == 2, edge_index[0] > edge_index[1])
+features = torch.FloatTensor(np.load(args.features))
 
 # sanity check
 assert edge_index.shape[0] == 2
@@ -96,8 +99,8 @@ validation_genes = torch.arange(
 )[validation_genes_mask < 35]
 
 full_graph = gdata.Data(
-    edge_index=torch.cat((edge_index, edge_index[[1, 0]]), 1),
-    edge_types=torch.cat((edge_types, edge_types)),
+    edge_index=edge_index,
+    edge_types=edge_types,
     feats=features,
     node_classes=node_classes,
     num_nodes=len(node_classes),
@@ -154,36 +157,44 @@ full_graph.neg_train_gg = neg[
     :, torch.logical_and(torch.logical_not(neg_val), neg_edge_type == 0)
 ]
 
+train_edge_index = torch.cat(
+    (
+        full_graph.pos_train_gg,
+        full_graph.pos_train_gd,
+        full_graph.edge_index[:, full_graph.edge_types == 2],
+    ),
+    1,
+)
 # sparse tensor
-full_graph.train_adj_t_gg = SparseTensor(
-    row=full_graph.pos_train_gg[0],
-    col=full_graph.pos_train_gg[1],
-    value=torch.ones(full_graph.pos_train_gg.shape[1], dtype=torch.float),
+full_graph.train_adj_t = SparseTensor(
+    row=train_edge_index[0],
+    col=train_edge_index[1],
+    value=torch.ones(train_edge_index.shape[1], dtype=torch.float),
     sparse_sizes=(len(node_classes), len(node_classes)),
 )
-full_graph.train_adj_t_gd = SparseTensor(
-    row=full_graph.pos_train_gd[0],
-    col=full_graph.pos_train_gd[1],
-    value=torch.ones(full_graph.pos_train_gd.shape[1], dtype=torch.float),
+full_graph.train_edge_types = (
+    (
+        full_graph.train_adj_t.storage.row()
+        > (len(node_classes) - torch.sum(node_classes))
+    ).long()
+    + (
+        full_graph.train_adj_t.storage.col()
+        > (len(node_classes) - torch.sum(node_classes))
+    ).long()
+)
+full_graph.adj_t = SparseTensor(
+    row=full_graph.edge_index[0],
+    col=full_graph.edge_index[1],
+    value=torch.ones(len(full_graph.edge_types), dtype=torch.float),
     sparse_sizes=(len(node_classes), len(node_classes)),
 )
-full_graph.adj_t_gg = SparseTensor(
-    row=full_graph.edge_index[0][full_graph.edge_types == 0],
-    col=full_graph.edge_index[1][full_graph.edge_types == 0],
-    value=torch.ones(torch.sum(full_graph.edge_types == 0).item(), dtype=torch.float),
-    sparse_sizes=(len(node_classes), len(node_classes)),
-)
-full_graph.adj_t_gd = SparseTensor(
-    row=full_graph.edge_index[0][full_graph.edge_types == 1],
-    col=full_graph.edge_index[1][full_graph.edge_types == 1],
-    value=torch.ones(torch.sum(full_graph.edge_types == 1).item(), dtype=torch.float),
-    sparse_sizes=(len(node_classes), len(node_classes)),
-)
-full_graph.adj_t_dd = SparseTensor(
-    row=full_graph.edge_index[0][full_graph.edge_types == 2],
-    col=full_graph.edge_index[1][full_graph.edge_types == 2],
-    value=torch.ones(torch.sum(full_graph.edge_types == 2).item(), dtype=torch.float),
-    sparse_sizes=(len(node_classes), len(node_classes)),
+full_graph.edge_types = (
+    (
+        full_graph.adj_t.storage.row() > (len(node_classes) - torch.sum(node_classes))
+    ).long()
+    + (
+        full_graph.adj_t.storage.col() > (len(node_classes) - torch.sum(node_classes))
+    ).long()
 )
 
 mlflow.set_tracking_uri("http://localhost:12345")
@@ -211,9 +222,8 @@ with mlflow.start_run():
     with torch.no_grad():
         z = model.encode(
             full_graph.feats.to(args.device),
-            full_graph.adj_t_gg.to(args.device),
-            full_graph.adj_t_gd.to(args.device),
-            full_graph.adj_t_dd.to(args.device),
+            full_graph.adj_t.to(args.device),
+            full_graph.edge_types,
         )
         auc, ap = model.test(
             z,
@@ -224,9 +234,8 @@ with mlflow.start_run():
         mlflow.log_metric("Final full AP GD", ap)
         z = model.encode(
             full_graph.feats.to(args.device),
-            full_graph.train_adj_t_gg.to(args.device),
-            full_graph.train_adj_t_gd.to(args.device),
-            full_graph.adj_t_dd.to(args.device),
+            full_graph.train_adj_t.to(args.device),
+            full_graph.train_edge_types,
         )
         auc, ap = model.test(
             z,
