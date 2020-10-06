@@ -72,7 +72,7 @@ def callback(model, auc_ap_loss):
     global BEST_AP
     global ESTOP_COUNTER
     global EPOCH_COUNTER
-    auc_gd, ap_gd, auc_gg, ap_gg, loss = auc_ap_loss
+    auc_gd, ap_gd, loss = auc_ap_loss
     if BEST_AP < ap_gd:
         BEST_AP = ap_gd
         ESTOP_COUNTER = 0
@@ -80,8 +80,6 @@ def callback(model, auc_ap_loss):
     ESTOP_COUNTER += 1
     mlflow.log_metric("ROC_AUC_GD", auc_gd, step=EPOCH_COUNTER)
     mlflow.log_metric("AP_GD", ap_gd, step=EPOCH_COUNTER)
-    mlflow.log_metric("ROC_AUC_GG", auc_gg, step=EPOCH_COUNTER)
-    mlflow.log_metric("AP_GG", ap_gg, step=EPOCH_COUNTER)
     mlflow.log_metric("LOSS", loss, step=EPOCH_COUNTER)
     EPOCH_COUNTER += 1
     if ESTOP_COUNTER > 500:
@@ -145,9 +143,10 @@ neg_train = negative_sampling(
     num_nodes=len(node_classes),
     num_neg_samples=pos_train.shape[1]
     * (len(node_classes) ** 2)
-    / (np.sum(node_classes == 1) * np.sum(node_classes == 0)),
+    / ((node_classes == 1).sum() * (node_classes == 0).sum()),
     force_undirected=True,
 )
+neg_train = neg_train[:, torch.sum(neg_train >= len(node_classes), 0) == 0]
 neg_edge_type = torch.sum(
     neg_train >= (len(node_classes) - torch.sum(node_classes)), 0
 )
@@ -158,9 +157,10 @@ neg_val = negative_sampling(
     num_nodes=len(node_classes),
     num_neg_samples=(pos_train.shape[1] + pos_val.shape[1])
     * (len(node_classes) ** 2)
-    / (np.sum(node_classes == 1) * np.sum(node_classes == 0)),
+    / ((node_classes == 1).sum() * (node_classes == 0).sum()),
     force_undirected=True,
 )
+neg_val = neg_val[:, torch.sum(neg_val >= len(node_classes), 0) == 0]
 neg_edge_type = torch.sum(
     neg_val >= (len(node_classes) - torch.sum(node_classes)), 0
 )
@@ -171,9 +171,10 @@ neg_test = negative_sampling(
     num_nodes=len(node_classes),
     num_neg_samples=edge_index.shape[1]
     * (len(node_classes) ** 2)
-    / (np.sum(node_classes == 1) * np.sum(node_classes == 0)),
+    / ((node_classes == 1).sum() * (node_classes == 0).sum()),
     force_undirected=True,
 )
+neg_test = neg_test[:, torch.sum(neg_test >= len(node_classes), 0) == 0]
 neg_edge_type = torch.sum(
     neg_test >= (len(node_classes) - torch.sum(node_classes)), 0
 )
@@ -288,8 +289,8 @@ with mlflow.start_run():
         )
         auc, ap = model.test(
             z,
-            full_graph.pos_val_gd.to(args.device),
-            full_graph.neg_val_gd.to(args.device),
+            full_graph.pos_val.to(args.device),
+            full_graph.neg_val.to(args.device),
         )
         mlflow.log_metric("Chosen model val AUC GD", auc)
         mlflow.log_metric("Chosen model val AP GD", ap)

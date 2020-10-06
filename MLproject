@@ -49,3 +49,19 @@ entry_points:
             node_classes: path
         command: |
             python ctd.py {lr} {wd} {epochs} {dim} {device} {seed} {edges} {features} {node_classes}
+    ctd_time:
+        parameters:
+            lr: {type: float, default: 0.002}
+            wd: {type: float, default: 0.0001}
+            epochs: {type: int, default: 1000}
+            val_year: {type: int, default: 2012}
+            test_year: {type: int, default: 2017}
+            dim: {type: int, default: 32}
+            device: {type: string, default: 'cuda'}
+            seed: {type: int, default: 42}
+            edges: path
+            dates: path
+            features: path
+            node_classes: path
+        command: |
+            python ctd.py {lr} {wd} {epochs} {val_year} {test_year} {dim} {device} {seed} {edges} {dates} {features} {node_classes}
