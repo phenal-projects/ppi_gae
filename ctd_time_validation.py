@@ -9,6 +9,7 @@ import torch.optim as opt
 import torch_geometric.nn as gnn
 import torch_geometric.data as gdata
 from torch_geometric import utils
+from torch_geometric.utils.negative_sampling import negative_sampling
 from torch_sparse import SparseTensor
 
 import mlflow
@@ -30,6 +31,16 @@ def construct_parser():
     parser.add_argument(
         "epochs", type=int, help="the number of epochs to train"
     )
+    parser.add_argument(
+        "val_year",
+        type=int,
+        help="after this year the edges will be considered val",
+    )
+    parser.add_argument(
+        "test_year",
+        type=int,
+        help="after this year the edges will be considered test",
+    )
     parser.add_argument("dim", type=int, help="the size of embeddings")
     parser.add_argument("device", type=str, help="cuda or cpu")
     parser.add_argument("seed", type=int, help="random seed for repruduction")
@@ -37,6 +48,11 @@ def construct_parser():
     # Paths
     parser.add_argument(
         "edges", type=str, help="a path to the edge list (npy)"
+    )
+    parser.add_argument(
+        "edges_dates",
+        type=str,
+        help="a list of years for train/val/test split",
     )
     parser.add_argument(
         "features",
@@ -83,8 +99,12 @@ torch.backends.cudnn.benchmark = False
 np.random.seed(args.seed)
 
 # load the data
-edge_index = utils.remove_self_loops(torch.LongTensor(np.load(args.edges)))[0]
+edge_dates = torch.LongTensor(np.load(args.edges_dates))
+edge_index, edge_dates = utils.remove_self_loops(
+    torch.LongTensor(np.load(args.edges)), edge_attr=edge_dates
+)
 edge_index = torch.cat((edge_index, edge_index[[1, 0]]), 1)
+edge_dates = torch.cat((edge_dates, edge_dates))
 
 node_classes = torch.LongTensor(np.load(args.node_classes))
 
@@ -99,134 +119,105 @@ assert edge_index.shape[0] == 2
 assert torch.max(edge_index) < node_classes.shape[0]
 
 # train-test split edges
-genes = torch.arange(len(node_classes))[node_classes == 0]
-diseases = torch.arange(len(node_classes))[node_classes == 1]
-validation_genes_mask = torch.randint(
-    0, 100, size=(len(node_classes) - torch.sum(node_classes).item(),)
+pos_train = edge_index[:, edge_dates <= args.test_year]
+pos_val = edge_index[
+    :,
+    torch.logical_and(
+        edge_dates > args.val_year, edge_dates <= args.test_year
+    ),
+]
+pos_test = edge_index[:, edge_dates > args.test_year]
+# sparse tensor
+train_adj_t = SparseTensor(
+    row=pos_train[0],
+    col=pos_train[1],
+    value=torch.ones(pos_train.shape[1], dtype=torch.float),
+    sparse_sizes=(len(node_classes), len(node_classes)),
 )
-validation_genes = torch.arange(
-    0, len(node_classes) - torch.sum(node_classes), dtype=torch.long
-)[validation_genes_mask < 20]
+adj_t = SparseTensor(
+    row=edge_index[0],
+    col=edge_index[1],
+    value=torch.ones(edge_index.shape[1], dtype=torch.float),
+    sparse_sizes=(len(node_classes), len(node_classes)),
+)
+neg_train = negative_sampling(
+    pos_train,
+    num_nodes=len(node_classes),
+    num_neg_samples=pos_train.shape[1]
+    * (len(node_classes) ** 2)
+    / (np.sum(node_classes == 1) * np.sum(node_classes == 0)),
+    force_undirected=True,
+)
+neg_edge_type = torch.sum(
+    neg_train >= (len(node_classes) - torch.sum(node_classes)), 0
+)
+neg_train = neg_train[:, neg_edge_type == 1]
+
+neg_val = negative_sampling(
+    torch.cat((pos_val, pos_train), 1),
+    num_nodes=len(node_classes),
+    num_neg_samples=(pos_train.shape[1] + pos_val.shape[1])
+    * (len(node_classes) ** 2)
+    / (np.sum(node_classes == 1) * np.sum(node_classes == 0)),
+    force_undirected=True,
+)
+neg_edge_type = torch.sum(
+    neg_val >= (len(node_classes) - torch.sum(node_classes)), 0
+)
+neg_val = neg_val[:, neg_edge_type == 1]
+
+neg_test = negative_sampling(
+    edge_index,
+    num_nodes=len(node_classes),
+    num_neg_samples=edge_index.shape[1]
+    * (len(node_classes) ** 2)
+    / (np.sum(node_classes == 1) * np.sum(node_classes == 0)),
+    force_undirected=True,
+)
+neg_edge_type = torch.sum(
+    neg_test >= (len(node_classes) - torch.sum(node_classes)), 0
+)
+neg_test = neg_test[:, neg_edge_type == 1]
+
+# edge types
+train_edge_types = (
+    (
+        train_adj_t.storage.row()
+        > (len(node_classes) - torch.sum(node_classes))
+    ).long()
+    + (
+        train_adj_t.storage.col()
+        > (len(node_classes) - torch.sum(node_classes))
+    ).long()
+)
+train_edge_types += torch.logical_and(
+    train_adj_t.storage.row() < train_adj_t.storage.col(),
+    train_edge_types == 2,
+)
+edge_types = (
+    (
+        adj_t.storage.row() > (len(node_classes) - torch.sum(node_classes))
+    ).long()
+    + (
+        adj_t.storage.col() > (len(node_classes) - torch.sum(node_classes))
+    ).long()
+)
+edge_types += torch.logical_and(
+    adj_t.storage.row() < adj_t.storage.col(), edge_types == 2,
+)
 
 full_graph = gdata.Data(
-    edge_index=edge_index,
+    adj_t=adj_t,
+    train_adj_t=train_adj_t,
     edge_types=edge_types,
+    train_edge_types=train_edge_types,
+    pos_val=pos_val,
+    neg_val=neg_val,
+    pos_train=pos_train,
+    neg_train=neg_train,
     feats=features,
     node_classes=node_classes,
     num_nodes=len(node_classes),
-)
-
-# positive train/val
-pos_val = torch.logical_or(
-    torch.logical_and(
-        torch.BoolTensor(np.isin(full_graph.edge_index[0], validation_genes),),
-        full_graph.edge_types == 1,
-    ),
-    torch.logical_and(
-        torch.BoolTensor(np.isin(full_graph.edge_index[1], validation_genes),),
-        full_graph.edge_types == 1,
-    ),
-)
-full_graph.pos_val_gd = full_graph.edge_index[:, pos_val]
-full_graph.pos_train_gd = full_graph.edge_index[
-    :,
-    torch.logical_and(torch.logical_not(pos_val), full_graph.edge_types == 1),
-]
-pos_val = torch.logical_and(
-    torch.randint(0, 3, size=(len(full_graph.edge_types),)) == 0,
-    full_graph.edge_types == 0,
-)
-full_graph.pos_val_gg = full_graph.edge_index[:, pos_val]
-full_graph.pos_train_gg = full_graph.edge_index[
-    :,
-    torch.logical_and(torch.logical_not(pos_val), full_graph.edge_types == 0),
-]
-
-# negatives
-# utils.negative_sampling sometimes produces edges with unexisting nodes.
-# So here is a small patch.
-neg = utils.negative_sampling(
-    full_graph.edge_index,
-    num_nodes=full_graph.num_nodes,
-    force_undirected=True,
-)
-neg = neg[:, torch.sum(neg >= len(node_classes), 0) == 0]  # PATCH
-neg_edge_type = torch.sum(
-    neg >= (len(node_classes) - torch.sum(node_classes)), 0
-)
-neg_val = torch.logical_or(
-    torch.logical_and(
-        torch.BoolTensor(np.isin(neg[0], validation_genes),),
-        neg_edge_type == 1,
-    ),
-    torch.logical_and(
-        torch.BoolTensor(np.isin(neg[1], validation_genes),),
-        neg_edge_type == 1,
-    ),
-)
-full_graph.neg_val_gd = neg[:, neg_val]
-full_graph.neg_train_gd = neg[
-    :, torch.logical_and(torch.logical_not(neg_val), neg_edge_type == 1)
-]
-neg_val = torch.logical_and(
-    torch.randint(0, 3, size=(neg.shape[1],)) == 0, neg_edge_type == 0,
-)
-full_graph.neg_val_gg = neg[:, neg_val]
-full_graph.neg_train_gg = neg[
-    :, torch.logical_and(torch.logical_not(neg_val), neg_edge_type == 0)
-]
-
-train_edge_index = torch.cat(
-    (
-        full_graph.pos_train_gg,
-        full_graph.pos_train_gd,
-        full_graph.edge_index[:, full_graph.edge_types == 2],
-        full_graph.edge_index[:, full_graph.edge_types == 3],
-    ),
-    1,
-)
-# sparse tensor
-full_graph.train_adj_t = SparseTensor(
-    row=train_edge_index[0],
-    col=train_edge_index[1],
-    value=torch.ones(train_edge_index.shape[1], dtype=torch.float),
-    sparse_sizes=(len(node_classes), len(node_classes)),
-)
-full_graph.train_edge_types = (
-    (
-        full_graph.train_adj_t.storage.row()
-        > (len(node_classes) - torch.sum(node_classes))
-    ).long()
-    + (
-        full_graph.train_adj_t.storage.col()
-        > (len(node_classes) - torch.sum(node_classes))
-    ).long()
-)
-full_graph.train_edge_types += torch.logical_and(
-    full_graph.train_adj_t.storage.row()
-    < full_graph.train_adj_t.storage.col(),
-    full_graph.train_edge_types == 2,
-)
-
-full_graph.adj_t = SparseTensor(
-    row=full_graph.edge_index[0],
-    col=full_graph.edge_index[1],
-    value=torch.ones(len(full_graph.edge_types), dtype=torch.float),
-    sparse_sizes=(len(node_classes), len(node_classes)),
-)
-full_graph.edge_types = (
-    (
-        full_graph.adj_t.storage.row()
-        > (len(node_classes) - torch.sum(node_classes))
-    ).long()
-    + (
-        full_graph.adj_t.storage.col()
-        > (len(node_classes) - torch.sum(node_classes))
-    ).long()
-)
-full_graph.edge_types += torch.logical_and(
-    full_graph.adj_t.storage.row() < full_graph.adj_t.storage.col(),
-    full_graph.edge_types == 2,
 )
 
 mlflow.set_tracking_uri("http://localhost:12345")
@@ -257,20 +248,39 @@ with mlflow.start_run():
     )
 
     # full graph testing
+    val_adj_t = SparseTensor(
+        row=edge_index[0, edge_dates <= args.test_year],
+        col=edge_index[1, edge_dates <= args.test_year],
+        value=torch.ones(
+            (edge_dates <= args.test_year).sum(), dtype=torch.float
+        ),
+        sparse_sizes=(len(node_classes), len(node_classes)),
+    )
+    val_edge_types = (
+        (
+            val_adj_t.storage.row()
+            > (len(node_classes) - torch.sum(node_classes))
+        ).long()
+        + (
+            val_adj_t.storage.col()
+            > (len(node_classes) - torch.sum(node_classes))
+        ).long()
+    )
+    val_edge_types += torch.logical_and(
+        val_adj_t.storage.row() < val_adj_t.storage.col(), val_edge_types == 2,
+    )
     model.eval()
     with torch.no_grad():
         z = model.encode(
             full_graph.feats.to(args.device),
-            full_graph.adj_t.to(args.device),
-            full_graph.edge_types,
+            val_adj_t.to(args.device),
+            val_edge_types,
         )
         auc, ap = model.test(
-            z,
-            full_graph.pos_val_gd.to(args.device),
-            full_graph.neg_val_gd.to(args.device),
+            z, pos_test.to(args.device), neg_test.to(args.device),
         )
-        mlflow.log_metric("Final full AUC GD", auc)
-        mlflow.log_metric("Final full AP GD", ap)
+        mlflow.log_metric("Chosen model test AUC GD", auc)
+        mlflow.log_metric("Chosen model test AP GD", ap)
         z = model.encode(
             full_graph.feats.to(args.device),
             full_graph.train_adj_t.to(args.device),
@@ -281,12 +291,10 @@ with mlflow.start_run():
             full_graph.pos_val_gd.to(args.device),
             full_graph.neg_val_gd.to(args.device),
         )
-        mlflow.log_metric("Chosen model AUC GD", auc)
-        mlflow.log_metric("Chosen model AP GD", ap)
+        mlflow.log_metric("Chosen model val AUC GD", auc)
+        mlflow.log_metric("Chosen model val AP GD", ap)
 
     # encode
     embeddings = gae.encode_ctd(model, full_graph, args.device)
     np.save("./embedding_unsupervised.npy", embeddings)
     mlflow.log_artifact("./embedding_unsupervised.npy")
-    torch.save(validation_genes, "val_node.pt")
-    mlflow.log_artifact("./val_node.pt")

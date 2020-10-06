@@ -104,7 +104,9 @@ class Encoder(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels * 5
         self.conv1 = gnn.GCNConv(in_channels, 2 * out_channels, cached=False)
-        self.conv2 = gnn.GCNConv(2 * out_channels, 2 * out_channels, cached=False)
+        self.conv2 = gnn.GCNConv(
+            2 * out_channels, 2 * out_channels, cached=False
+        )
         self.conv3 = gnn.GCNConv(2 * out_channels, out_channels, cached=False)
 
     def forward(self, x, edge_index):
@@ -139,7 +141,9 @@ class CTDEncoder(nn.Module):
 
     def forward(self, x, adj_t, edge_types):
         """Calculates embeddings"""
-        x1 = self.norm1(self.conv1(torch.cat((x, self.emb), 0), adj_t, edge_types))
+        x1 = self.norm1(
+            self.conv1(torch.cat((x, self.emb), 0), adj_t, edge_types)
+        )
         x2 = self.norm2(self.conv2(F.relu(x1), adj_t, edge_types))
         x3 = self.conv3(F.relu(x2), adj_t, edge_types)
         return x3
@@ -168,7 +172,9 @@ class SimpleEncoder(nn.Module):
         return self.emb
 
 
-def train_gae(model, loader, optimizer, scheduler, device, epochs, callback=None):
+def train_gae(
+    model, loader, optimizer, scheduler, device, epochs, callback=None
+):
     """Trains Graph Autoencoder
 
     Parameters
@@ -290,7 +296,9 @@ def finetune_gae(
             z = model(x, train_pos_adj)
             loss = loss_fn(
                 z[train_mask],
-                prob_labels(graph.y[train_mask], graph.probs[train_mask]).to(device),
+                prob_labels(graph.y[train_mask], graph.probs[train_mask]).to(
+                    device
+                ),
             )
             val_loss = loss_fn(z[val_mask], graph.y[val_mask].to(device),)
             loss.backward()
@@ -318,7 +326,9 @@ def encode(model, graph, device):
     return z.cpu().numpy()
 
 
-def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=None):
+def train_ctd_gae(
+    model, loader, optimizer, scheduler, device, epochs, callback=None
+):
     """Trains CTD Graph Autoencoder
 
     Parameters
@@ -347,10 +357,8 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
     model.to(device)
 
     losses = []
-    aucs_gd = []
-    aps_gd = []
-    aucs_gg = []
-    aps_gg = []
+    aucs = []
+    aps = []
 
     for epoch in range(epochs):
         for graph in loader:
@@ -364,11 +372,12 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
             graph = graph
             z = model.encode(x, train_pos_adj, edge_types)
             pos_loss = -torch.log(
-                model.decoder(z, graph.pos_train_gd.to(device), sigmoid=True) + 1e-15
+                model.decoder(z, graph.pos_train.to(device), sigmoid=True)
+                + 1e-15
             ).mean()
             neg_loss = -torch.log(
                 1
-                - model.decoder(z, graph.neg_train_gd.to(device), sigmoid=True)
+                - model.decoder(z, graph.neg_train.to(device), sigmoid=True)
                 + 1e-15
             ).mean()
             loss = pos_loss + neg_loss
@@ -380,28 +389,19 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
             with torch.no_grad():
                 z = model.encode(x, train_pos_adj, edge_types)
                 auc, ap = model.test(
-                    z, graph.pos_val_gd.to(device), graph.neg_val_gd.to(device),
+                    z, graph.pos_val.to(device), graph.neg_val.to(device),
                 )
-                aucs_gd.append(auc)
-                aps_gd.append(ap)
-                auc, ap = model.test(
-                    z, graph.pos_val_gg.to(device), graph.neg_val_gg.to(device),
-                )
-                aucs_gg.append(auc)
-                aps_gg.append(ap)
+                aucs.append(auc)
+                aps.append(ap)
 
-        mean_auc_gd = np.sum(aucs_gd[-len(loader) :]) / len(loader)
-        mean_ap_gd = np.sum(aps_gd[-len(loader) :]) / len(loader)
-        mean_auc_gg = np.sum(aucs_gg[-len(loader) :]) / len(loader)
-        mean_ap_gg = np.sum(aps_gg[-len(loader) :]) / len(loader)
+        mean_auc = np.sum(aucs[-len(loader) :]) / len(loader)
+        mean_ap = np.sum(aps[-len(loader) :]) / len(loader)
         mean_loss = np.sum(losses[-len(loader) :]) / len(loader)
         if scheduler is not None:
             scheduler.step(mean_loss)
 
         if callback is not None:
-            if callback(
-                model, (mean_auc_gd, mean_ap_gd, mean_auc_gg, mean_ap_gg, mean_loss),
-            ):
+            if callback(model, (mean_auc, mean_ap, mean_loss),):
                 return model
     return model
 
@@ -411,6 +411,8 @@ def encode_ctd(model, graph, device):
     model = model.to(device)
     with torch.no_grad():
         z = model.encode(
-            graph.feats.to(device), graph.adj_t.to(device), graph.edge_types.to(device),
+            graph.feats.to(device),
+            graph.adj_t.to(device),
+            graph.edge_types.to(device),
         )
     return z.detach().cpu().numpy()
