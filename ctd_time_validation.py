@@ -141,9 +141,7 @@ adj_t = SparseTensor(
 neg_train = negative_sampling(
     pos_train,
     num_nodes=len(node_classes),
-    num_neg_samples=pos_train.shape[1]
-    * (len(node_classes) ** 2)
-    / ((node_classes == 1).sum() * (node_classes == 0).sum()),
+    num_neg_samples=pos_train.shape[1] * 50,
     force_undirected=True,
 )
 neg_train = neg_train[:, torch.sum(neg_train >= len(node_classes), 0) == 0]
@@ -151,13 +149,12 @@ neg_edge_type = torch.sum(
     neg_train >= (len(node_classes) - torch.sum(node_classes)), 0
 )
 neg_train = neg_train[:, neg_edge_type == 1]
+neg_train = neg_train[:, : pos_train.size(1)]
 
 neg_val = negative_sampling(
     torch.cat((pos_val, pos_train), 1),
     num_nodes=len(node_classes),
-    num_neg_samples=(pos_train.shape[1] + pos_val.shape[1])
-    * (len(node_classes) ** 2)
-    / ((node_classes == 1).sum() * (node_classes == 0).sum()),
+    num_neg_samples=(pos_train.shape[1] + pos_val.shape[1]) * 50,
     force_undirected=True,
 )
 neg_val = neg_val[:, torch.sum(neg_val >= len(node_classes), 0) == 0]
@@ -165,13 +162,12 @@ neg_edge_type = torch.sum(
     neg_val >= (len(node_classes) - torch.sum(node_classes)), 0
 )
 neg_val = neg_val[:, neg_edge_type == 1]
+neg_val = neg_val[:, : pos_val.size(1)]
 
 neg_test = negative_sampling(
     edge_index,
     num_nodes=len(node_classes),
-    num_neg_samples=edge_index.shape[1]
-    * (len(node_classes) ** 2)
-    / ((node_classes == 1).sum() * (node_classes == 0).sum()),
+    num_neg_samples=edge_index.shape[1] * 50,
     force_undirected=True,
 )
 neg_test = neg_test[:, torch.sum(neg_test >= len(node_classes), 0) == 0]
@@ -179,6 +175,7 @@ neg_edge_type = torch.sum(
     neg_test >= (len(node_classes) - torch.sum(node_classes)), 0
 )
 neg_test = neg_test[:, neg_edge_type == 1]
+neg_test = neg_test[:, : pos_test.size(1)]
 
 # edge types
 train_edge_types = (
