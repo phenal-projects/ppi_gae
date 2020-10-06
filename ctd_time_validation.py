@@ -224,6 +224,18 @@ full_graph = gdata.Data(
 mlflow.set_tracking_uri("http://localhost:12345")
 
 with mlflow.start_run():
+    # split stats
+    mlflow.log_metric("train pos edges", len(pos_train[0]))
+    mlflow.log_metric("val pos edges", len(pos_val[0]))
+    mlflow.log_metric("test pos edges", len(pos_test[0]))
+    mlflow.log_metric(
+        "train POS/NEG", float(len(pos_train[0])) / len(neg_train[0])
+    )
+    mlflow.log_metric("val POS/NEG", float(len(pos_val[0])) / len(neg_val[0]))
+    mlflow.log_metric(
+        "test POS/NEG", float(len(pos_test[0])) / len(neg_test[0])
+    )
+
     model = gnn.GAE(gae.CTDEncoder(62, args.dim, torch.sum(node_classes)))
     optimizer = opt.AdamW(model.parameters(), args.lr, weight_decay=args.wd)
     scheduler = opt.lr_scheduler.ReduceLROnPlateau(
