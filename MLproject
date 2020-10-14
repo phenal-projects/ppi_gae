@@ -64,4 +64,4 @@ entry_points:
             features: path
             node_classes: path
         command: |
-            python ctd.py {lr} {wd} {epochs} {val_year} {test_year} {dim} {device} {seed} {edges} {dates} {features} {node_classes}
+            python ctd_time_validation.py {lr} {wd} {epochs} {val_year} {test_year} {dim} {device} {seed} {edges} {dates} {features} {node_classes}
