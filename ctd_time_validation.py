@@ -1,4 +1,5 @@
 """CTD Gene-Disease GAE training"""
+from operator import pos
 from sys import argv
 import argparse
 
@@ -28,41 +29,27 @@ def construct_parser():
     parser = argparse.ArgumentParser(description="Train HGAE.")
     parser.add_argument("lr", type=float, help="learning rate")
     parser.add_argument("wd", type=float, help="weight decay")
+    parser.add_argument("epochs", type=int, help="the number of epochs to train")
     parser.add_argument(
-        "epochs", type=int, help="the number of epochs to train"
+        "val_year", type=int, help="after this year the edges will be considered val",
     )
     parser.add_argument(
-        "val_year",
-        type=int,
-        help="after this year the edges will be considered val",
-    )
-    parser.add_argument(
-        "test_year",
-        type=int,
-        help="after this year the edges will be considered test",
+        "test_year", type=int, help="after this year the edges will be considered test",
     )
     parser.add_argument("dim", type=int, help="the size of embeddings")
     parser.add_argument("device", type=str, help="cuda or cpu")
     parser.add_argument("seed", type=int, help="random seed for repruduction")
 
     # Paths
+    parser.add_argument("edges", type=str, help="a path to the edge list (npy)")
     parser.add_argument(
-        "edges", type=str, help="a path to the edge list (npy)"
+        "edges_dates", type=str, help="a list of years for train/val/test split",
     )
     parser.add_argument(
-        "edges_dates",
-        type=str,
-        help="a list of years for train/val/test split",
+        "features", type=str, help="a path to the features of the protein nodes (npy)",
     )
     parser.add_argument(
-        "features",
-        type=str,
-        help="a path to the features of the protein nodes (npy)",
-    )
-    parser.add_argument(
-        "node_classes",
-        type=str,
-        help="a path to the expressions data file (npy)",
+        "node_classes", type=str, help="a path to the expressions data file (npy)",
     )
     return parser
 
@@ -88,6 +75,26 @@ def callback(model, auc_ap_loss):
     return False
 
 
+def neg_sample(pos_ei, num_nodes, min_dis_id, edge_type=1):
+    pos_edge_types = torch.sum(pos_ei >= min_dis_id, 0)
+    pos_edge_types += torch.logical_and(pos_edge_types == 2, pos_ei[0] > pos_ei[1])
+    neg_sample_size = torch.sum(pos_edge_types == edge_type)
+    neg_sample = negative_sampling(
+        pos_ei,
+        num_nodes=num_nodes,
+        num_neg_samples=neg_sample_size * 25,  # oversampling
+        force_undirected=True,
+    )
+    neg_sample = neg_sample[:, torch.sum(neg_sample > num_nodes, 0) == 0]  # quick fix
+    neg_edge_type = torch.sum(neg_sample >= min_dis_id, 0)
+    neg_edge_type += torch.logical_and(
+        neg_edge_type == 2, neg_sample[0] > neg_sample[1]
+    )
+    neg_sample = neg_sample[:, neg_edge_type == edge_type]
+    neg_sample = neg_sample[:, :neg_sample_size]
+    return neg_sample
+
+
 args = construct_parser().parse_args(argv[1:])
 
 # deterministic behaviour
@@ -105,10 +112,8 @@ edge_index = torch.cat((edge_index, edge_index[[1, 0]]), 1)
 edge_dates = torch.cat((edge_dates, edge_dates))
 
 node_classes = torch.LongTensor(np.load(args.node_classes))
-
-edge_types = torch.sum(
-    edge_index >= (len(node_classes) - torch.sum(node_classes)), 0
-)
+min_dis_id = len(node_classes) - torch.sum(node_classes)
+edge_types = torch.sum(edge_index >= min_dis_id, 0)
 edge_types += torch.logical_and(edge_types == 2, edge_index[0] > edge_index[1])
 features = torch.FloatTensor(np.load(args.features))
 
@@ -117,19 +122,27 @@ assert edge_index.shape[0] == 2
 assert torch.max(edge_index) < node_classes.shape[0]
 
 # train-test split edges
-pos_train = edge_index[:, edge_dates <= args.test_year]
-pos_val = edge_index[
+pos_train_gd = edge_index[
+    :, torch.logical_and(edge_dates < args.val_year, edge_types == 1)
+]
+pos_val_gd = edge_index[
     :,
     torch.logical_and(
-        edge_dates > args.val_year, edge_dates <= args.test_year
+        torch.logical_and(edge_dates >= args.val_year, edge_dates < args.test_year),
+        edge_types == 1,
     ),
 ]
-pos_test = edge_index[:, edge_dates > args.test_year]
+pos_test_gd = edge_index[
+    :, torch.logical_and(edge_dates >= args.test_year, edge_types == 1)
+]
+
 # sparse tensor
 train_adj_t = SparseTensor(
-    row=pos_train[0],
-    col=pos_train[1],
-    value=torch.ones(pos_train.shape[1], dtype=torch.float),
+    row=edge_index[0, edge_dates < args.val_year],
+    col=edge_index[1, edge_dates < args.val_year],
+    value=torch.ones(
+        edge_index[0, edge_dates < args.val_year].shape[0], dtype=torch.float
+    ),
     sparse_sizes=(len(node_classes), len(node_classes)),
 )
 adj_t = SparseTensor(
@@ -138,81 +151,43 @@ adj_t = SparseTensor(
     value=torch.ones(edge_index.shape[1], dtype=torch.float),
     sparse_sizes=(len(node_classes), len(node_classes)),
 )
-neg_train = negative_sampling(
-    pos_train,
-    num_nodes=len(node_classes),
-    num_neg_samples=pos_train.shape[1] * 50,
-    force_undirected=True,
-)
-neg_train = neg_train[:, torch.sum(neg_train >= len(node_classes), 0) == 0]
-neg_edge_type = torch.sum(
-    neg_train >= (len(node_classes) - torch.sum(node_classes)), 0
-)
-neg_train = neg_train[:, neg_edge_type == 1]
-neg_train = neg_train[:, : pos_train.size(1)]
-
-neg_val = negative_sampling(
-    torch.cat((pos_val, pos_train), 1),
-    num_nodes=len(node_classes),
-    num_neg_samples=(pos_train.shape[1] + pos_val.shape[1]) * 50,
-    force_undirected=True,
-)
-neg_val = neg_val[:, torch.sum(neg_val >= len(node_classes), 0) == 0]
-neg_edge_type = torch.sum(
-    neg_val >= (len(node_classes) - torch.sum(node_classes)), 0
-)
-neg_val = neg_val[:, neg_edge_type == 1]
-neg_val = neg_val[:, : pos_val.size(1)]
-
-neg_test = negative_sampling(
-    edge_index,
-    num_nodes=len(node_classes),
-    num_neg_samples=edge_index.shape[1] * 50,
-    force_undirected=True,
-)
-neg_test = neg_test[:, torch.sum(neg_test >= len(node_classes), 0) == 0]
-neg_edge_type = torch.sum(
-    neg_test >= (len(node_classes) - torch.sum(node_classes)), 0
-)
-neg_test = neg_test[:, neg_edge_type == 1]
-neg_test = neg_test[:, : pos_test.size(1)]
 
 # edge types
-train_edge_types = (
-    (
-        train_adj_t.storage.row()
-        > (len(node_classes) - torch.sum(node_classes))
-    ).long()
-    + (
-        train_adj_t.storage.col()
-        > (len(node_classes) - torch.sum(node_classes))
-    ).long()
-)
+train_edge_types = (train_adj_t.storage.row() >= min_dis_id).long() + (
+    train_adj_t.storage.col() >= min_dis_id
+).long()
 train_edge_types += torch.logical_and(
-    train_adj_t.storage.row() < train_adj_t.storage.col(),
-    train_edge_types == 2,
+    train_adj_t.storage.row() < train_adj_t.storage.col(), train_edge_types == 2,
 )
-edge_types = (
-    (
-        adj_t.storage.row() > (len(node_classes) - torch.sum(node_classes))
-    ).long()
-    + (
-        adj_t.storage.col() > (len(node_classes) - torch.sum(node_classes))
-    ).long()
-)
+edge_types = (adj_t.storage.row() >= min_dis_id).long() + (
+    adj_t.storage.col() >= min_dis_id
+).long()
 edge_types += torch.logical_and(
     adj_t.storage.row() < adj_t.storage.col(), edge_types == 2,
 )
+
+# negatives
+neg = neg_sample(edge_index, len(node_classes), min_dis_id)
+neg_train_gd = neg[:, : torch.sum(train_edge_types == 1)]
+neg_val_gd = neg[
+    :,
+    torch.sum(train_edge_types == 1) : torch.sum(train_edge_types == 1)
+    + pos_val_gd.size(-1),
+]
+neg_test_gd = neg[
+    :, torch.sum(train_edge_types == 1) + pos_val_gd.size(-1) :,
+]
+
 
 full_graph = gdata.Data(
     adj_t=adj_t,
     train_adj_t=train_adj_t,
     edge_types=edge_types,
     train_edge_types=train_edge_types,
-    pos_val=pos_val,
-    neg_val=neg_val,
-    pos_train=pos_train,
-    neg_train=neg_train,
+    pos_val_gd=pos_val_gd,
+    neg_val_gd=neg_val_gd,
+    pos_train_gd=pos_train_gd,
+    neg_train_gd=neg_train_gd,
     feats=features,
     node_classes=node_classes,
     num_nodes=len(node_classes),
@@ -222,16 +197,16 @@ mlflow.set_tracking_uri("http://localhost:12345")
 
 with mlflow.start_run():
     # split stats
-    mlflow.log_metric("train pos edges", len(pos_train[0]))
-    mlflow.log_metric("val pos edges", len(pos_val[0]))
-    mlflow.log_metric("test pos edges", len(pos_test[0]))
     mlflow.log_metric(
-        "train POS/NEG", float(len(pos_train[0])) / len(neg_train[0])
+        "train pos gene-disease edges", torch.sum(train_edge_types == 1).item()
     )
-    mlflow.log_metric("val POS/NEG", float(len(pos_val[0])) / len(neg_val[0]))
+    mlflow.log_metric("val pos gene-disease edges", len(pos_val_gd[0]))
+    mlflow.log_metric("test pos gene-disease edges", len(pos_test_gd[0]))
     mlflow.log_metric(
-        "test POS/NEG", float(len(pos_test[0])) / len(neg_test[0])
+        "train POS/NEG", float(torch.sum(train_edge_types == 1)) / len(neg_train_gd[0])
     )
+    mlflow.log_metric("val POS/NEG", float(len(pos_val_gd[0])) / len(neg_val_gd[0]))
+    mlflow.log_metric("test POS/NEG", float(len(pos_test_gd[0])) / len(neg_test_gd[0]))
 
     model = gnn.GAE(gae.CTDEncoder(62, args.dim, torch.sum(node_classes)))
     optimizer = opt.AdamW(model.parameters(), args.lr, weight_decay=args.wd)
@@ -239,55 +214,35 @@ with mlflow.start_run():
         optimizer, factor=0.5, patience=100, verbose=True
     )
     model = gae.train_ctd_gae(
-        model,
-        [full_graph],
-        optimizer,
-        scheduler,
-        args.device,
-        args.epochs,
-        callback,
+        model, [full_graph], optimizer, scheduler, args.device, args.epochs, callback,
     )
     torch.save(model, "./model.pt")
 
     model = torch.load("./best_model.pt")
     mlflow.pytorch.log_model(
-        model,
-        "unsupervised_ctd_model.pt",
-        conda_env="conda.yaml",
-        code_paths=["./"],
+        model, "unsupervised_ctd_model.pt", conda_env="conda.yaml", code_paths=["./"],
     )
 
     # full graph testing
     val_adj_t = SparseTensor(
-        row=edge_index[0, edge_dates <= args.test_year],
-        col=edge_index[1, edge_dates <= args.test_year],
-        value=torch.ones(
-            (edge_dates <= args.test_year).sum(), dtype=torch.float
-        ),
+        row=edge_index[0, edge_dates < args.test_year],
+        col=edge_index[1, edge_dates < args.test_year],
+        value=torch.ones((edge_dates < args.test_year).sum(), dtype=torch.float),
         sparse_sizes=(len(node_classes), len(node_classes)),
     )
-    val_edge_types = (
-        (
-            val_adj_t.storage.row()
-            > (len(node_classes) - torch.sum(node_classes))
-        ).long()
-        + (
-            val_adj_t.storage.col()
-            > (len(node_classes) - torch.sum(node_classes))
-        ).long()
-    )
+    val_edge_types = (val_adj_t.storage.row() >= min_dis_id).long() + (
+        val_adj_t.storage.col() >= min_dis_id
+    ).long()
     val_edge_types += torch.logical_and(
         val_adj_t.storage.row() < val_adj_t.storage.col(), val_edge_types == 2,
     )
     model.eval()
     with torch.no_grad():
         z = model.encode(
-            full_graph.feats.to(args.device),
-            val_adj_t.to(args.device),
-            val_edge_types,
+            full_graph.feats.to(args.device), val_adj_t.to(args.device), val_edge_types,
         )
         auc, ap = model.test(
-            z, pos_test.to(args.device), neg_test.to(args.device),
+            z, pos_test_gd.to(args.device), neg_test_gd.to(args.device),
         )
         mlflow.log_metric("Chosen model test AUC GD", auc)
         mlflow.log_metric("Chosen model test AP GD", ap)
@@ -298,8 +253,8 @@ with mlflow.start_run():
         )
         auc, ap = model.test(
             z,
-            full_graph.pos_val.to(args.device),
-            full_graph.neg_val.to(args.device),
+            full_graph.pos_val_gd.to(args.device),
+            full_graph.neg_val_gd.to(args.device),
         )
         mlflow.log_metric("Chosen model val AUC GD", auc)
         mlflow.log_metric("Chosen model val AP GD", ap)
