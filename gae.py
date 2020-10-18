@@ -108,7 +108,6 @@ class Encoder(nn.Module):
 
     def forward(self, x, edge_index):
         """Calculates embeddings"""
-        edge_index = gcn_norm(edge_index, num_nodes=x.size(-2), add_self_loops=False)
         x1 = self.conv1(x, edge_index)
         x2 = self.conv2(F.relu(x1), edge_index)
         return torch.cat([self.conv3(F.relu(x2), edge_index), x2, x1], -1)
@@ -139,6 +138,7 @@ class CTDEncoder(nn.Module):
 
     def forward(self, x, adj_t, edge_types):
         """Calculates embeddings"""
+        adj_t = gcn_norm(adj_t, num_nodes=x.size(-2), add_self_loops=False)
         x1 = self.norm1(self.conv1(torch.cat((x, self.emb), 0), adj_t, edge_types))
         x2 = self.norm2(self.conv2(F.relu(x1), adj_t, edge_types))
         x3 = self.conv3(F.relu(x2), adj_t, edge_types)
