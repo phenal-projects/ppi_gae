@@ -66,7 +66,6 @@ class WRGCNConv(gnn.MessagePassing):
             The new node features
         """
         # adj normalization. Does not use edge classes!
-        adj = gcn_norm(adj, num_nodes=x.size(-2), add_self_loops=False)
         out = x @ self.root + self.bias
         for i in range(self.num_relations):
             tmp = masked_select_nnz(adj, edge_type == i, layout="coo")
@@ -109,6 +108,7 @@ class Encoder(nn.Module):
 
     def forward(self, x, edge_index):
         """Calculates embeddings"""
+        edge_index = gcn_norm(edge_index, num_nodes=x.size(-2), add_self_loops=False)
         x1 = self.conv1(x, edge_index)
         x2 = self.conv2(F.relu(x1), edge_index)
         return torch.cat([self.conv3(F.relu(x2), edge_index), x2, x1], -1)
