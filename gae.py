@@ -142,7 +142,7 @@ class CTDEncoder(nn.Module):
         adj_t = gcn_norm(adj_t, num_nodes=x.size(-2), add_self_loops=False)
         x1 = self.norm1(self.conv1(torch.cat((x, self.emb), 0), adj_t, edge_types))
         x2 = self.norm2(self.conv2(F.relu(x1), adj_t, edge_types))
-        for i in range(5):
+        for _ in range(5):
             x2 = self.norm2(self.convinf(F.relu(x2), adj_t, edge_types))
         x3 = self.conv3(F.relu(x2), adj_t, edge_types)
         return x3
