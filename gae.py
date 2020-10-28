@@ -134,6 +134,7 @@ class CTDEncoder(nn.Module):
         self.norm2 = nn.BatchNorm1d(4 * out_channels)
         self.conv1 = WRGCNConv(in_channels, 2 * out_channels, 3)
         self.conv2 = WRGCNConv(2 * out_channels, 4 * out_channels, 3)
+        self.convinf = WRGCNConv(4 * out_channels, 4 * out_channels, 3)
         self.conv3 = WRGCNConv(4 * out_channels, out_channels, 3)
 
     def forward(self, x, adj_t, edge_types):
@@ -141,6 +142,8 @@ class CTDEncoder(nn.Module):
         adj_t = gcn_norm(adj_t, num_nodes=x.size(-2), add_self_loops=False)
         x1 = self.norm1(self.conv1(torch.cat((x, self.emb), 0), adj_t, edge_types))
         x2 = self.norm2(self.conv2(F.relu(x1), adj_t, edge_types))
+        for i in range(5):
+            x2 = self.norm2(self.convinf(F.relu(x2), adj_t, edge_types))
         x3 = self.conv3(F.relu(x2), adj_t, edge_types)
         return x3
 
