@@ -132,8 +132,7 @@ class CTDEncoder(nn.Module):
         self.emb = nn.parameter.Parameter(
             torch.rand((dis_nodes, in_channels)), requires_grad=True
         )
-        self.norm1 = nn.BatchNorm1d(2 * out_channels)
-        self.norm2 = nn.BatchNorm1d(4 * out_channels)
+        self.norm = nn.BatchNorm1d(2 * out_channels)
         self.conv1 = WRGCNConv(in_channels, 2 * out_channels, 3)
         self.conv2 = WRGCNConv(2 * out_channels, out_channels, 3)
         self.drop = nn.Dropout(0.1)
@@ -141,10 +140,8 @@ class CTDEncoder(nn.Module):
     def forward(self, x, adj_t, edge_types):
         """Calculates embeddings"""
         adj_t = gcn_norm(adj_t, num_nodes=x.size(-2), add_self_loops=False)
-        x1 = self.drop(
-            self.norm1(self.conv1(torch.cat((x, self.emb), 0), adj_t, edge_types))
-        )
-        x2 = self.drop(self.norm2(self.conv2(F.relu(x1), adj_t, edge_types)))
+        x1 = self.norm(self.conv1(torch.cat((x, self.emb), 0), adj_t, edge_types))
+        x2 = self.drop(self.conv2(F.relu(x1), adj_t, edge_types))
         return x2
 
 
