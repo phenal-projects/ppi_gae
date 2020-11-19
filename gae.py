@@ -135,10 +135,8 @@ class CTDEncoder(nn.Module):
         self.norm1 = nn.BatchNorm1d(2 * out_channels)
         self.norm2 = nn.BatchNorm1d(4 * out_channels)
         self.conv1 = WRGCNConv(in_channels, 2 * out_channels, 3)
-        self.conv2 = WRGCNConv(2 * out_channels, 4 * out_channels, 3)
-        self.convinf = WRGCNConv(4 * out_channels, 4 * out_channels, 3)
-        self.conv3 = WRGCNConv(4 * out_channels, out_channels, 3)
-        self.drop = nn.Dropout(0.15)
+        self.conv2 = WRGCNConv(2 * out_channels, out_channels, 3)
+        self.drop = nn.Dropout(0.1)
 
     def forward(self, x, adj_t, edge_types):
         """Calculates embeddings"""
@@ -147,8 +145,7 @@ class CTDEncoder(nn.Module):
             self.norm1(self.conv1(torch.cat((x, self.emb), 0), adj_t, edge_types))
         )
         x2 = self.drop(self.norm2(self.conv2(F.relu(x1), adj_t, edge_types)))
-        x3 = self.conv3(F.relu(self.drop(x2)), adj_t, edge_types)
-        return x3
+        return x2
 
 
 class RelDecoder(nn.Module):
@@ -428,6 +425,7 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
             optimizer.zero_grad()
             z = model.encode(x, train_pos_adj, edge_types)
 
+            # GENE - DIS
             # assume the edges are directed
             assert (graph.pos_train_gd[0] < graph.pos_train_gd[1]).all()
             pos_loss = -torch.log(
@@ -443,6 +441,36 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
                 1 - model.decoder(z, graph.neg_train_gd.to(device), (0, 1)) + 1e-15
             ).mean()
             loss = pos_loss + neg_loss
+
+            # GENE - GENE
+            pos_loss = -torch.log(
+                model.decoder(z, graph.pos_train_gg.to(device), (0, 0)) + 1e-15
+            ).mean()
+            graph.neg_train_gg = graph.pos_train_gg
+            graph.neg_train_gg[1] = torch.randint(
+                0,
+                int(graph.num_nodes - graph.node_classes.sum()),
+                size=(len(graph.pos_train_gg[0]),),
+            )
+            neg_loss = -torch.log(
+                1 - model.decoder(z, graph.neg_train_gg.to(device), (0, 0)) + 1e-15
+            ).mean()
+            loss += 0.2 * pos_loss + 0.2 * neg_loss
+
+            # DIS - DIS
+            pos_loss = -torch.log(
+                model.decoder(z, graph.pos_train_dd.to(device), (0, 0)) + 1e-15
+            ).mean()
+            graph.neg_train_dd = graph.pos_train_dd
+            graph.neg_train_dd[1] = torch.randint(
+                int(graph.num_nodes - graph.node_classes.sum()),
+                graph.num_nodes,
+                size=(len(graph.pos_train_dd[0]),),
+            )
+            neg_loss = -torch.log(
+                1 - model.decoder(z, graph.neg_train_dd.to(device), (1, 1)) + 1e-15
+            ).mean()
+            loss += 0.2 * pos_loss + 0.2 * neg_loss
             loss.backward()
             optimizer.step()
             losses.append(loss.item())

@@ -16,7 +16,6 @@ from torch_sparse import SparseTensor
 import gae
 
 BEST_AP = 0
-ESTOP_COUNTER = 0
 EPOCH_COUNTER = 0
 
 
@@ -53,21 +52,15 @@ def construct_parser():
 def callback(model, auc_ap_loss):
     """A callback function for printing training stats"""
     global BEST_AP
-    global ESTOP_COUNTER
     global EPOCH_COUNTER
     auc_gd, ap_gd, loss = auc_ap_loss
     if BEST_AP < ap_gd:
         BEST_AP = ap_gd
-        ESTOP_COUNTER = 0
         torch.save(model, "./best_model.pt")
-    ESTOP_COUNTER += 1
     mlflow.log_metric("ROC_AUC_GD", auc_gd, step=EPOCH_COUNTER)
     mlflow.log_metric("AP_GD", ap_gd, step=EPOCH_COUNTER)
     mlflow.log_metric("LOSS", loss, step=EPOCH_COUNTER)
     EPOCH_COUNTER += 1
-    if ESTOP_COUNTER > 500:
-        print("Stop!")
-        return True
     return False
 
 
@@ -125,6 +118,12 @@ if __name__ == "__main__":
             torch.logical_and(edge_dates < args.val_year, edge_types == 1),
             edge_index[0] < edge_index[1],
         ),
+    ]
+    pos_train_gg = edge_index[
+        :, torch.logical_and(edge_dates < args.val_year, edge_types == 0),
+    ]
+    pos_train_dd = edge_index[
+        :, torch.logical_and(edge_dates < args.val_year, edge_types == 2),
     ]
     pos_val_gd = edge_index[
         :,
@@ -196,6 +195,8 @@ if __name__ == "__main__":
         pos_val_gd=pos_val_gd,
         neg_val_gd=neg_val_gd,
         pos_train_gd=pos_train_gd,
+        pos_train_gg=pos_train_gg,
+        pos_train_dd=pos_train_dd,
         neg_train_gd=neg_train_gd,
         feats=features,
         node_classes=node_classes,
