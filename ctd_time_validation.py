@@ -239,7 +239,7 @@ if __name__ == "__main__":
         )
         torch.save(model, "./model.pt")
 
-        model = torch.load("./best_model.pt")
+        # model = torch.load("./best_model.pt")
         mlflow.pytorch.log_model(
             model,
             "unsupervised_ctd_model.pt",
