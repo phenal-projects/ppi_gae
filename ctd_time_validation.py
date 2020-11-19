@@ -267,8 +267,12 @@ if __name__ == "__main__":
                 val_adj_t.to(args.device),
                 val_edge_types,
             )
-            auc, ap = model.test(
-                z, pos_test_gd.to(args.device), neg_test_gd.to(args.device),
+            auc, ap = gae.test(
+                z,
+                model.decoder,
+                (0, 1),
+                pos_test_gd.to(args.device),
+                neg_test_gd.to(args.device),
             )
             mlflow.log_metric("Chosen model test AUC GD", auc)
             mlflow.log_metric("Chosen model test AP GD", ap)
@@ -277,8 +281,10 @@ if __name__ == "__main__":
                 full_graph.train_adj_t.to(args.device),
                 full_graph.train_edge_types,
             )
-            auc, ap = model.test(
+            auc, ap = gae.test(
                 z,
+                model.decoder,
+                (0, 1),
                 full_graph.pos_val_gd.to(args.device),
                 full_graph.neg_val_gd.to(args.device),
             )
