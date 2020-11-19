@@ -120,17 +120,30 @@ if __name__ == "__main__":
 
     # train-test split edges
     pos_train_gd = edge_index[
-        :, torch.logical_and(edge_dates < args.val_year, edge_types == 1)
+        :,
+        torch.logical_and(
+            torch.logical_and(edge_dates < args.val_year, edge_types == 1),
+            edge_index[0] < edge_index[1],
+        ),
     ]
     pos_val_gd = edge_index[
         :,
         torch.logical_and(
-            torch.logical_and(edge_dates >= args.val_year, edge_dates < args.test_year),
-            edge_types == 1,
+            torch.logical_and(
+                torch.logical_and(
+                    edge_dates >= args.val_year, edge_dates < args.test_year
+                ),
+                edge_types == 1,
+            ),
+            edge_index[0] < edge_index[1],
         ),
     ]
     pos_test_gd = edge_index[
-        :, torch.logical_and(edge_dates >= args.test_year, edge_types == 1)
+        :,
+        torch.logical_and(
+            torch.logical_and(edge_dates >= args.test_year, edge_types == 1),
+            edge_index[0] < edge_index[1],
+        ),
     ]
 
     # sparse tensor
@@ -207,7 +220,10 @@ if __name__ == "__main__":
             "test POS/NEG", float(len(pos_test_gd[0])) / len(neg_test_gd[0])
         )
 
-        model = gnn.GAE(gae.CTDEncoder(62, args.dim, torch.sum(node_classes)))
+        model = gnn.GAE(
+            gae.CTDEncoder(62, args.dim, torch.sum(node_classes)),
+            gae.RelDecoder(args.dim, 2, 16),
+        )
         optimizer = opt.AdamW(model.parameters(), args.lr, weight_decay=args.wd)
         scheduler = opt.lr_scheduler.ReduceLROnPlateau(
             optimizer, factor=0.5, patience=100, verbose=True

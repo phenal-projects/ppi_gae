@@ -151,6 +151,35 @@ class CTDEncoder(nn.Module):
         return x3
 
 
+class RelDecoder(nn.Module):
+    def __init__(self, in_channels, ent_types, rank):
+        """Initializes the decoder with encoded embeddings
+
+        \sigma(Z @ R1 @ R2.T @ Z.T)
+
+        Parameters
+        ----------
+        in_channels : int
+            The number of channels in the node embeddings
+        ent_types : int
+            The number of entity types
+        rank : int
+            The rank of the middle matrix R1 @ R2.T
+        """
+        super(RelDecoder, self).__init__()
+        self.in_channels = in_channels
+        self.rel_types = ent_types
+        self.rank = rank
+        self.rel = nn.parameter.Parameter(
+            torch.rand((ent_types, in_channels, rank)), requires_grad=True
+        )
+
+    def forward(self, z, edge_index, rel_mat_indices):
+        return (z[edge_index[0]] @ self.rel[rel_mat_indices[0]]) * (
+            z[edge_index[1]] @ self.rel[rel_mat_indices[1]]
+        ).sum(dim=1)
+
+
 class SimpleEncoder(nn.Module):
     def __init__(self, in_channels, out_channels, nodes):
         """Initializes the GCN encoder with encoded embeddings
@@ -365,15 +394,21 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
 
             model.train()
             optimizer.zero_grad()
-            graph = graph
             z = model.encode(x, train_pos_adj, edge_types)
+
+            # assume the edges are directed
+            assert (graph.pos_train_gd[0] < graph.pos_train_gd[1]).all()
             pos_loss = -torch.log(
-                model.decoder(z, graph.pos_train_gd.to(device), sigmoid=True) + 1e-15
+                model.decoder(z, graph.pos_train_gd.to(device), (0, 1)) + 1e-15
             ).mean()
+            graph.neg_train_gd[0] = graph.pos_train_gd[0]
+            graph.neg_train_gd[1] = torch.randint(
+                int(graph.num_nodes - graph.node_classes.sum()),
+                graph.num_nodes,
+                size=len(graph.pos_train_gd[0]),
+            )
             neg_loss = -torch.log(
-                1
-                - model.decoder(z, graph.neg_train_gd.to(device), sigmoid=True)
-                + 1e-15
+                1 - model.decoder(z, graph.neg_train_gd.to(device), (0, 1)) + 1e-15
             ).mean()
             loss = pos_loss + neg_loss
             loss.backward()
