@@ -147,8 +147,6 @@ class CTDEncoder(nn.Module):
             self.norm1(self.conv1(torch.cat((x, self.emb), 0), adj_t, edge_types))
         )
         x2 = self.drop(self.norm2(self.conv2(F.relu(x1), adj_t, edge_types)))
-        for _ in range(5):
-            x2 = self.norm2(self.convinf(F.relu(x2), adj_t, edge_types))
         x3 = self.conv3(F.relu(self.drop(x2)), adj_t, edge_types)
         return x3
 
@@ -452,9 +450,6 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
             model.eval()
             with torch.no_grad():
                 z = model.encode(x, train_pos_adj, edge_types)
-                pred = model.decode(
-                    z, graph.pos_val_gd.to(device), graph.neg_val_gd.to(device)
-                )
                 auc, ap = test(
                     z,
                     model.decoder,
