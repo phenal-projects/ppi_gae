@@ -10,6 +10,8 @@ from torch_geometric.nn.inits import glorot, zeros
 from torch_sparse import matmul, masked_select_nnz
 from torch_geometric.nn.conv.gcn_conv import gcn_norm
 
+from sklearn.metrics import roc_auc_score, average_precision_score
+
 # deterministic behaviour
 torch.manual_seed(42)
 torch.backends.cudnn.deterministic = True
@@ -155,7 +157,7 @@ class RelDecoder(nn.Module):
     def __init__(self, in_channels, ent_types, rank):
         """Initializes the decoder with encoded embeddings
 
-        \sigma(Z @ R1 @ R2.T @ Z.T)
+        sigma(Z @ R1 @ R2.T @ Z.T)
 
         Parameters
         ----------
@@ -174,10 +176,14 @@ class RelDecoder(nn.Module):
             torch.rand((ent_types, in_channels, rank)), requires_grad=True
         )
 
-    def forward(self, z, edge_index, rel_mat_indices):
-        return (z[edge_index[0]] @ self.rel[rel_mat_indices[0]]) * (
-            z[edge_index[1]] @ self.rel[rel_mat_indices[1]]
+    def forward(self, z, edge_index, rel_mat_indices, sigmoid=True):
+        res = (
+            (z[edge_index[0]] @ self.rel[rel_mat_indices[0]])
+            * (z[edge_index[1]] @ self.rel[rel_mat_indices[1]])
         ).sum(dim=1)
+        if not sigmoid:
+            return res
+        return torch.sigmoid(res)
 
 
 class SimpleEncoder(nn.Module):
@@ -353,6 +359,34 @@ def encode(model, graph, device):
     return z.cpu().numpy()
 
 
+def test(z, decoder, entity_types, pos_edge_index, neg_edge_index):
+    r"""Given latent variables :obj:`z`, positive edges
+        :obj:`pos_edge_index` and negative edges :obj:`neg_edge_index`,
+        computes area under the ROC curve (AUC) and average precision (AP)
+        scores.
+
+        Args:
+            z (Tensor): The latent space :math:`\mathbf{Z}`.
+            entity_types (tuple): Ids of the entities.
+                against.
+            pos_edge_index (LongTensor): The positive edges to evaluate
+                against.
+            neg_edge_index (LongTensor): The negative edges to evaluate
+                against.
+        """
+    pos_y = z.new_ones(pos_edge_index.size(1))
+    neg_y = z.new_zeros(neg_edge_index.size(1))
+    y = torch.cat([pos_y, neg_y], dim=0)
+
+    pos_pred = decoder(z, pos_edge_index, entity_types, sigmoid=True)
+    neg_pred = decoder(z, neg_edge_index, entity_types, sigmoid=True)
+    pred = torch.cat([pos_pred, neg_pred], dim=0)
+
+    y, pred = y.detach().cpu().numpy(), pred.detach().cpu().numpy()
+
+    return roc_auc_score(y, pred), average_precision_score(y, pred)
+
+
 def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=None):
     """Trains CTD Graph Autoencoder
 
@@ -401,11 +435,11 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
             pos_loss = -torch.log(
                 model.decoder(z, graph.pos_train_gd.to(device), (0, 1)) + 1e-15
             ).mean()
-            graph.neg_train_gd[0] = graph.pos_train_gd[0]
+            graph.neg_train_gd = graph.pos_train_gd
             graph.neg_train_gd[1] = torch.randint(
                 int(graph.num_nodes - graph.node_classes.sum()),
                 graph.num_nodes,
-                size=len(graph.pos_train_gd[0]),
+                size=(len(graph.pos_train_gd[0]),),
             )
             neg_loss = -torch.log(
                 1 - model.decoder(z, graph.neg_train_gd.to(device), (0, 1)) + 1e-15
@@ -418,8 +452,15 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
             model.eval()
             with torch.no_grad():
                 z = model.encode(x, train_pos_adj, edge_types)
-                auc, ap = model.test(
-                    z, graph.pos_val_gd.to(device), graph.neg_val_gd.to(device),
+                pred = model.decode(
+                    z, graph.pos_val_gd.to(device), graph.neg_val_gd.to(device)
+                )
+                auc, ap = test(
+                    z,
+                    model.decoder,
+                    (0, 1),
+                    graph.pos_val_gd.to(device),
+                    graph.neg_val_gd.to(device),
                 )
                 aucs.append(auc)
                 aps.append(ap)
