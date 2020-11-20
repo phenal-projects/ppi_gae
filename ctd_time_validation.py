@@ -54,7 +54,7 @@ def callback(model, auc_ap_loss):
     global BEST_AP
     global EPOCH_COUNTER
     auc_gd, ap_gd, loss = auc_ap_loss
-    if BEST_AP < ap_gd:
+    if BEST_AP < ap_gd and EPOCH_COUNTER > 100:
         BEST_AP = ap_gd
         torch.save(model, "./best_model.pt")
     mlflow.log_metric("ROC_AUC_GD", auc_gd, step=EPOCH_COUNTER)
@@ -80,6 +80,7 @@ def neg_sample(pos_ei, num_nodes, min_dis_id, edge_type=1):
         neg_edge_type == 2, neg_sample[0] > neg_sample[1]
     )
     neg_sample = neg_sample[:, neg_edge_type == edge_type]
+    neg_sample = neg_sample[:, neg_sample[0] < neg_sample[1]]
     neg_sample = neg_sample[:, :neg_sample_size]
     return neg_sample
 
@@ -177,14 +178,16 @@ if __name__ == "__main__":
 
     # negatives
     neg = neg_sample(edge_index, len(node_classes), min_dis_id)
-    neg_train_gd = neg[:, : torch.sum(train_edge_types == 1)]
+    neg_train_gd = neg[:, : pos_train_gd.size(-1)]
     neg_val_gd = neg[
-        :,
-        torch.sum(train_edge_types == 1) : torch.sum(train_edge_types == 1)
-        + pos_val_gd.size(-1),
+        :, pos_train_gd.size(-1) : pos_train_gd.size(-1) + pos_val_gd.size(-1),
     ]
     neg_test_gd = neg[
-        :, torch.sum(train_edge_types == 1) + pos_val_gd.size(-1) :,
+        :,
+        pos_train_gd.size(-1)
+        + pos_val_gd.size(-1) : pos_train_gd.size(-1)
+        + pos_val_gd.size(-1)
+        + pos_test_gd.size(-1),
     ]
 
     full_graph = gdata.Data(
@@ -207,17 +210,14 @@ if __name__ == "__main__":
 
     with mlflow.start_run():
         # split stats
-        mlflow.log_metric(
-            "train pos gene-disease edges", torch.sum(train_edge_types == 1).item()
+        mlflow.log_param("train pos gene-disease edges", len(pos_train_gd[0]))
+        mlflow.log_param("val pos gene-disease edges", len(pos_val_gd[0]))
+        mlflow.log_param("test pos gene-disease edges", len(pos_test_gd[0]))
+        mlflow.log_param(
+            "train POS/NEG", float(len(pos_train_gd[0])) / len(neg_train_gd[0]),
         )
-        mlflow.log_metric("val pos gene-disease edges", len(pos_val_gd[0]))
-        mlflow.log_metric("test pos gene-disease edges", len(pos_test_gd[0]))
-        mlflow.log_metric(
-            "train POS/NEG",
-            float(torch.sum(train_edge_types == 1)) / len(neg_train_gd[0]),
-        )
-        mlflow.log_metric("val POS/NEG", float(len(pos_val_gd[0])) / len(neg_val_gd[0]))
-        mlflow.log_metric(
+        mlflow.log_param("val POS/NEG", float(len(pos_val_gd[0])) / len(neg_val_gd[0]))
+        mlflow.log_param(
             "test POS/NEG", float(len(pos_test_gd[0])) / len(neg_test_gd[0])
         )
 
@@ -225,9 +225,14 @@ if __name__ == "__main__":
             gae.CTDEncoder(62, args.dim, torch.sum(node_classes)),
             gae.RelDecoder(args.dim, 2, 16),
         )
-        optimizer = opt.AdamW(model.parameters(), args.lr, weight_decay=args.wd)
-        scheduler = opt.lr_scheduler.ReduceLROnPlateau(
-            optimizer, factor=0.5, patience=100, verbose=True
+        mlflow.log_param(
+            "model parameters", sum([p.numel() for p in model.parameters()])
+        )
+        optimizer = opt.SGD(
+            model.parameters(), args.lr, momentum=0.9, weight_decay=args.wd
+        )
+        scheduler = opt.lr_scheduler.CosineAnnealingWarmRestarts(
+            optimizer, T_0=200, T_mult=2, eta_min=1e-7
         )
         model = gae.train_ctd_gae(
             model,
@@ -240,7 +245,7 @@ if __name__ == "__main__":
         )
         torch.save(model, "./model.pt")
 
-        # model = torch.load("./best_model.pt")
+        model = torch.load("./best_model.pt")
         mlflow.pytorch.log_model(
             model,
             "unsupervised_ctd_model.pt",
