@@ -170,7 +170,7 @@ class RelDecoder(nn.Module):
         self.in_channels = in_channels
         self.rel_types = rel_types
         self.rel = nn.parameter.Parameter(
-            torch.rand((rel_types, in_channels)), requires_grad=True
+            torch.ones((rel_types, in_channels)), requires_grad=True
         )
 
     def forward(self, z, edge_index, rel_id, sigmoid=True):
@@ -425,17 +425,18 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
             z = model.encode(x, train_pos_adj, edge_types)
 
             loss = 0
-            for edge_type in graph.pos_val:
-                pos_edges = graph.pos_val[edge_type]
-                pos_loss = -torch.log(
-                    model.decoder(z, pos_edges.to(device), edge_type) + 1e-15
-                ).mean()
-                neg_edges = pos_edges
-                neg_edges[1] = torch.randint(graph.num_nodes, (len(pos_edges[0]),))
-                neg_loss = -torch.log(
-                    1 - model.decoder(z, neg_edges.to(device), edge_type) + 1e-15
-                ).mean()
-                loss += pos_loss + neg_loss
+            for edge_type in graph.pos_train:
+                pos_edges = graph.pos_train[edge_type]
+                if pos_edges.shape[-1] != 0:
+                    pos_loss = -torch.log(
+                        model.decoder(z, pos_edges.to(device), edge_type) + 1e-15
+                    ).mean()
+                    neg_edges = pos_edges
+                    neg_edges[1] = torch.randint(graph.num_nodes, (len(pos_edges[0]),))
+                    neg_loss = -torch.log(
+                        1 - model.decoder(z, neg_edges.to(device), edge_type) + 1e-15
+                    ).mean()
+                    loss += graph.loss_weights[edge_type] * (pos_loss + neg_loss)
 
             loss.backward()
             optimizer.step()

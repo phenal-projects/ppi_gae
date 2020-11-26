@@ -67,16 +67,14 @@ def callback(model, auc_ap_loss):
 def neg_sample(pos_ei, num_nodes, node_classes, edge_type=1):
     """edge_type is calculated as class_from * node_classes + class_to"""
     num_classes = node_classes.max() + 1
-    classes = node_classes[pos_ei]
-    pos_edge_types = classes[0] * num_classes + classes[1]
-    neg_sample_size = torch.sum(pos_edge_types == edge_type)
+    neg_sample_size = pos_ei.shape[-1]
     neg_sample = negative_sampling(
         pos_ei,
         num_nodes=num_nodes,
         num_neg_samples=neg_sample_size * (num_classes ** 2 * 3),  # oversampling
         force_undirected=True,
     )
-    neg_sample = neg_sample[:, torch.sum(neg_sample > num_nodes, 0) == 0]  # quick fix
+    neg_sample = neg_sample[:, torch.sum(neg_sample >= num_nodes, 0) == 0]  # quick fix
     neg_classes = node_classes[neg_sample]
     neg_edge_type = neg_classes[0] * num_classes + neg_classes[1]
     neg_sample = neg_sample[:, neg_edge_type == edge_type]
@@ -118,12 +116,10 @@ if __name__ == "__main__":
     neg_test = {}
     neg_val = {}
     for edge_type in edge_types.unique():
-        from_class = edge_type // num_classes
-        to_class = edge_type % num_classes
-        pos_train[edge_type] = edge_index[
+        pos_train[edge_type.item()] = edge_index[
             :, torch.logical_and(edge_dates < args.val_year, edge_types == edge_type),
         ]
-        pos_val[edge_type] = edge_index[
+        pos_val[edge_type.item()] = edge_index[
             :,
             torch.logical_and(
                 torch.logical_and(
@@ -132,23 +128,23 @@ if __name__ == "__main__":
                 edge_types == edge_type,
             ),
         ]
-        pos_test[edge_type] = edge_index[
+        pos_test[edge_type.item()] = edge_index[
             :, torch.logical_and(edge_dates >= args.test_year, edge_types == edge_type),
         ]
         neg = neg_sample(
-            edge_index, len(node_classes), node_classes, edge_type=edge_type
+            edge_index, len(node_classes), node_classes, edge_type=edge_type.item()
         )
-        neg_val[edge_type] = neg[
+        neg_val[edge_type.item()] = neg[
             :,
-            pos_train[edge_type].size(-1) : pos_train[edge_type].size(-1)
-            + pos_val[edge_type].size(-1),
+            pos_train[edge_type.item()].size(-1) : pos_train[edge_type.item()].size(-1)
+            + pos_val[edge_type.item()].size(-1),
         ]
-        neg_test[edge_type] = neg[
+        neg_test[edge_type.item()] = neg[
             :,
-            pos_train[edge_type].size(-1)
-            + pos_val[edge_type].size(-1) : pos_train[edge_type].size(-1)
-            + pos_val[edge_type].size(-1)
-            + pos_test[edge_type].size(-1),
+            pos_train[edge_type.item()].size(-1)
+            + pos_val[edge_type.item()].size(-1) : pos_train[edge_type.item()].size(-1)
+            + pos_val[edge_type.item()].size(-1)
+            + pos_test[edge_type.item()].size(-1),
         ]
 
     # sparse tensor
@@ -188,6 +184,7 @@ if __name__ == "__main__":
         feats=features,
         node_classes=node_classes,
         num_nodes=len(node_classes),
+        loss_weights=[0.5, 1, 1, 0.5],
     )
 
     mlflow.set_tracking_uri("http://localhost:12345")
@@ -195,9 +192,18 @@ if __name__ == "__main__":
     with mlflow.start_run():
         # split stats
         for edge_type in edge_types.unique():
-            mlflow.log_param("train pos" + str(edge_type), len(pos_train[edge_type][0]))
-            mlflow.log_param("val pos" + str(edge_type), len(pos_val[edge_type][0]))
-            mlflow.log_param("test pos" + str(edge_type), len(pos_test[edge_type][0]))
+            mlflow.log_param(
+                "train pos edges - type " + str(edge_type.item()),
+                len(pos_train[edge_type.item()][0]),
+            )
+            mlflow.log_param(
+                "val pos edges - type " + str(edge_type.item()),
+                len(pos_val[edge_type.item()][0]),
+            )
+            mlflow.log_param(
+                "test pos edges - type " + str(edge_type.item()),
+                len(pos_test[edge_type.item()][0]),
+            )
 
         model = gnn.GAE(
             gae.CTDEncoder(62, args.dim, torch.sum(node_classes)),
@@ -252,7 +258,7 @@ if __name__ == "__main__":
             auc, ap = gae.test(
                 z,
                 model.decoder,
-                (0, 1),
+                1,
                 pos_test[1].to(args.device),
                 neg_test[1].to(args.device),
             )
@@ -266,7 +272,7 @@ if __name__ == "__main__":
             auc, ap = gae.test(
                 z,
                 model.decoder,
-                (0, 1),
+                1,
                 full_graph.pos_val[1].to(args.device),
                 full_graph.neg_val[1].to(args.device),
             )
