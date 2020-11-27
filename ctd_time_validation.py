@@ -184,7 +184,9 @@ if __name__ == "__main__":
         feats=features,
         node_classes=node_classes,
         num_nodes=len(node_classes),
-        loss_weights=[0.5, 1, 1, 0.5],
+        loss_weights=[
+            0.5 if (x != 1 and x != 3) else 2 for x in range(num_classes ** 2)
+        ],
     )
 
     mlflow.set_tracking_uri("http://localhost:12345")
@@ -206,7 +208,7 @@ if __name__ == "__main__":
             )
 
         model = gnn.GAE(
-            gae.CTDEncoder(62, args.dim, torch.sum(node_classes)),
+            gae.CTDEncoder(62, args.dim, torch.sum(node_classes != 0)),
             gae.RelDecoder(args.dim, num_classes ** 2),
         )
         mlflow.log_param(
