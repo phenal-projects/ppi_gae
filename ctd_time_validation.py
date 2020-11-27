@@ -185,7 +185,7 @@ if __name__ == "__main__":
         node_classes=node_classes,
         num_nodes=len(node_classes),
         loss_weights=[
-            0.5 if (x != 1 and x != 3) else 2 for x in range(num_classes ** 2)
+            1 if (x != 1 and x != 3) else 1.5 for x in range(num_classes ** 2)
         ],
     )
 
