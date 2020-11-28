@@ -66,4 +66,4 @@ entry_points:
             features: path
             node_classes: path
         command: |
-            python ctd_time_validation.py {lr} {wd} {epochs} {val_year} {test_year} {dim} {device} {seed} {edges} {dates} {features} {node_classes} --targetmult {targetmult} --posmult {posmult}
+            python ctd_time_validation.py {lr} {wd} {epochs} {val_year} {test_year} {dim} {edges} {dates} {features} {node_classes} --device {device} --seed {seed} --targetmult {targetmult} --posmult {posmult}
