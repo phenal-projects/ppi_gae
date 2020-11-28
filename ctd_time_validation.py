@@ -32,8 +32,16 @@ def construct_parser():
         "test_year", type=int, help="after this year the edges will be considered test",
     )
     parser.add_argument("dim", type=int, help="the size of embeddings")
-    parser.add_argument("device", type=str, help="cuda or cpu")
-    parser.add_argument("seed", type=int, help="random seed for repruduction")
+    parser.add_argument("--device", default="cuda", type=str, help="cuda or cpu")
+    parser.add_argument(
+        "--seed", type=int, default=42, help="random seed for repruduction"
+    )
+    parser.add_argument(
+        "--posmult", type=float, default=2, help="multiplier for positive loss"
+    )
+    parser.add_argument(
+        "--targetmult", type=float, default=3, help="weight of the target edges loss"
+    )
 
     # Paths
     parser.add_argument("edges", type=str, help="a path to the edge list (npy)")
@@ -185,8 +193,10 @@ if __name__ == "__main__":
         node_classes=node_classes,
         num_nodes=len(node_classes),
         loss_weights=[
-            1 if (x != 1 and x != 3) else 1.5 for x in range(num_classes ** 2)
+            1 if (x != 1 and x != 3) else args.targetmult
+            for x in range(num_classes ** 2)
         ],
+        pos_multiplier=args.posmult,
     )
 
     mlflow.set_tracking_uri("http://localhost:12345")

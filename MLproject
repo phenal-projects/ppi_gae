@@ -59,9 +59,11 @@ entry_points:
             dim: {type: int, default: 32}
             device: {type: string, default: 'cuda'}
             seed: {type: int, default: 42}
+            posmult: {type: float, default: 2.0}
+            targetmult: {type: float, default: 3.0}
             edges: path
             dates: path
             features: path
             node_classes: path
         command: |
-            python ctd_time_validation.py {lr} {wd} {epochs} {val_year} {test_year} {dim} {device} {seed} {edges} {dates} {features} {node_classes}
+            python ctd_time_validation.py {lr} {wd} {epochs} {val_year} {test_year} {dim} {device} {seed} {edges} {dates} {features} {node_classes} --targetmult {targetmult} --posmult {posmult}
