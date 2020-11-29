@@ -116,7 +116,7 @@ class Encoder(nn.Module):
 
 
 class CTDEncoder(nn.Module):
-    def __init__(self, in_channels, out_channels, dis_nodes):
+    def __init__(self, in_channels, out_channels, num_dis_nodes, num_comp_nodes):
         """Initializes the GCN encoder with encoded embeddings
 
         Parameters
@@ -129,12 +129,23 @@ class CTDEncoder(nn.Module):
         super(CTDEncoder, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.emb = nn.parameter.Parameter(
-            torch.rand((dis_nodes, out_channels)), requires_grad=True
+        self.dis_emb = nn.parameter.Parameter(
+            torch.rand((num_dis_nodes, out_channels)), requires_grad=True
+        )
+        self.comp_emb = nn.parameter.Parameter(
+            torch.rand((num_comp_nodes, out_channels)), requires_grad=True
         )
         self.lin1 = nn.Sequential(nn.Linear(in_channels, out_channels), nn.ReLU())
-        self.norm1 = nn.BatchNorm1d(in_channels // 2)
-        self.norm2 = nn.BatchNorm1d(in_channels // 2)
+        self.normg1 = nn.BatchNorm1d(in_channels // 2)
+        self.normg2 = nn.BatchNorm1d(in_channels // 2)
+        self.normd1 = nn.BatchNorm1d(in_channels // 2)
+        self.normd2 = nn.BatchNorm1d(in_channels // 2)
+        self.normc1 = nn.BatchNorm1d(in_channels // 2)
+        self.normc2 = nn.BatchNorm1d(in_channels // 2)
+
+        self.normg3 = nn.BatchNorm1d(out_channels)
+        self.normd3 = nn.BatchNorm1d(out_channels)
+        self.normc3 = nn.BatchNorm1d(out_channels)
 
         self.conv1 = WRGCNConv(out_channels, in_channels // 2, 3)
         self.conv2 = WRGCNConv(in_channels // 2, in_channels // 2, 3)
@@ -144,11 +155,40 @@ class CTDEncoder(nn.Module):
     def forward(self, x, adj_t, edge_types):
         """Calculates embeddings"""
         adj_t = gcn_norm(adj_t, num_nodes=x.size(-2), add_self_loops=False)
-        x1 = self.norm1(
-            self.conv1(torch.cat((self.lin1(x), self.emb), 0), adj_t, edge_types)
+        x1 = F.relu(
+            self.conv1(
+                torch.cat((self.lin1(x), self.dis_emb, self.comp_emb), 0),
+                adj_t,
+                edge_types,
+            )
         )
-        x2 = self.norm2(self.conv2(F.relu(x1), adj_t, edge_types))
-        x3 = self.drop(self.conv3(F.relu(x2), adj_t, edge_types))
+        x1 = torch.cat(
+            (
+                self.normg1(x1[: x.shape[-2]]),
+                self.normd1(x1[x.shape[-2] : x.shape[-2] + self.dis_emb.shape[-2]]),
+                self.normc1(x1[x.shape[-2] + self.dis_emb.shape[-2] :]),
+            ),
+            0,
+        )
+        x2 = F.relu(self.conv2(x1, adj_t, edge_types))
+        x2 = torch.cat(
+            (
+                self.normg2(x2[: x.shape[-2]]),
+                self.normd2(x2[x.shape[-2] : x.shape[-2] + self.dis_emb.shape[-2]]),
+                self.normc2(x2[x.shape[-2] + self.dis_emb.shape[-2] :]),
+            ),
+            0,
+        )
+        x3 = self.conv3(x2, adj_t, edge_types)
+        x3 = torch.cat(
+            (
+                self.normg3(x3[: x.shape[-2]]),
+                self.normd3(x3[x.shape[-2] : x.shape[-2] + self.dis_emb.shape[-2]]),
+                self.normc3(x3[x.shape[-2] + self.dis_emb.shape[-2] :]),
+            ),
+            0,
+        )
+        x3 = self.drop(x3)
         return x3
 
 

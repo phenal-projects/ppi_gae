@@ -223,7 +223,9 @@ if __name__ == "__main__":
             )
 
         model = gnn.GAE(
-            gae.CTDEncoder(62, args.dim, torch.sum(node_classes != 0)),
+            gae.CTDEncoder(
+                62, args.dim, torch.sum(node_classes == 1), torch.sum(node_classes == 2)
+            ),
             gae.RelDecoder(args.dim, edge_types.max() + 1),
         )
         mlflow.log_param(
