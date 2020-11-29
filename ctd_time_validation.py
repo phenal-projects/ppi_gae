@@ -109,13 +109,46 @@ if __name__ == "__main__":
 
     node_classes = torch.LongTensor(np.load(args.node_classes))
     num_classes = node_classes.max() + 1
-    classes = node_classes[edge_index]
-    edge_types = classes[0] * num_classes + classes[1]
     features = torch.FloatTensor(np.load(args.features))
 
     # sanity check
     assert edge_index.shape[0] == 2
     assert torch.max(edge_index) < node_classes.shape[0]
+
+    # sparse tensors
+    train_adj_t = SparseTensor(
+        row=edge_index[0, edge_dates < args.val_year],
+        col=edge_index[1, edge_dates < args.val_year],
+        value=torch.ones(
+            edge_index[0, edge_dates < args.val_year].shape[0], dtype=torch.float
+        ),
+        sparse_sizes=(len(node_classes), len(node_classes)),
+    )
+    adj_t = SparseTensor(
+        row=edge_index[0],
+        col=edge_index[1],
+        value=torch.ones(edge_index.shape[1], dtype=torch.float),
+        sparse_sizes=(len(node_classes), len(node_classes)),
+    )
+
+    # edge types
+    train_edge_types = (
+        node_classes[train_adj_t.storage.row()] * num_classes
+        + node_classes[train_adj_t.storage.col()]
+    )
+    train_edge_types += torch.logical_and(
+        node_classes[train_adj_t.storage.row()]
+        > node_classes[train_adj_t.storage.col()],
+        train_edge_types == (num_classes + 1),
+    )
+    edge_types = (
+        node_classes[adj_t.storage.row()] * num_classes
+        + node_classes[adj_t.storage.col()]
+    )
+    edge_types += torch.logical_and(
+        node_classes[adj_t.storage.row()] > node_classes[adj_t.storage.col()],
+        edge_types == (num_classes + 1),
+    )
 
     # train-test split edges
     pos_train = {}
@@ -155,32 +188,6 @@ if __name__ == "__main__":
             + pos_test[edge_type.item()].size(-1),
         ]
 
-    # sparse tensor
-    train_adj_t = SparseTensor(
-        row=edge_index[0, edge_dates < args.val_year],
-        col=edge_index[1, edge_dates < args.val_year],
-        value=torch.ones(
-            edge_index[0, edge_dates < args.val_year].shape[0], dtype=torch.float
-        ),
-        sparse_sizes=(len(node_classes), len(node_classes)),
-    )
-    adj_t = SparseTensor(
-        row=edge_index[0],
-        col=edge_index[1],
-        value=torch.ones(edge_index.shape[1], dtype=torch.float),
-        sparse_sizes=(len(node_classes), len(node_classes)),
-    )
-
-    # edge types
-    train_edge_types = (
-        node_classes[train_adj_t.storage.row()] * num_classes
-        + node_classes[train_adj_t.storage.col()]
-    )
-    edge_types = (
-        node_classes[adj_t.storage.row()] * num_classes
-        + node_classes[adj_t.storage.col()]
-    )
-
     full_graph = gdata.Data(
         adj_t=adj_t,
         train_adj_t=train_adj_t,
@@ -219,7 +226,7 @@ if __name__ == "__main__":
 
         model = gnn.GAE(
             gae.CTDEncoder(62, args.dim, torch.sum(node_classes != 0)),
-            gae.RelDecoder(args.dim, num_classes ** 2),
+            gae.RelDecoder(args.dim, edge_types.max() + 1),
         )
         mlflow.log_param(
             "model parameters", sum([p.numel() for p in model.parameters()])
