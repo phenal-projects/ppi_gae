@@ -458,7 +458,7 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
 
             loss.backward()
             optimizer.step()
-            losses.append(loss.item())
+            losses.append(loss.item() / np.sum(graph.loss_weights))
 
             model.eval()
             with torch.no_grad():

@@ -72,8 +72,18 @@ def callback(model, auc_ap_loss):
     return False
 
 
-def neg_sample(pos_ei, num_nodes, node_classes, edge_type=1):
-    """edge_type is calculated as class_from * node_classes + class_to"""
+def get_edge_types(row, col, node_classes):
+    num_node_classes = node_classes.max() + 1
+    num_edge_classes = num_node_classes ** 2
+    edge_types = num_node_classes * node_classes[row] + node_classes[col]
+    edge_types[
+        torch.logical_and(row > col, edge_types == (num_classes + 1))
+    ] = num_edge_classes
+    return edge_types
+
+
+def neg_sample(pos_ei, num_nodes, node_classes):
+    """edge_type is calculated as class_from * node_classes + class_to, additional class for disease ontology (max id)"""
     num_classes = node_classes.max() + 1
     neg_sample_size = pos_ei.shape[-1]
     neg_sample = negative_sampling(
@@ -83,11 +93,8 @@ def neg_sample(pos_ei, num_nodes, node_classes, edge_type=1):
         force_undirected=True,
     )
     neg_sample = neg_sample[:, torch.sum(neg_sample >= num_nodes, 0) == 0]  # quick fix
-    neg_classes = node_classes[neg_sample]
-    neg_edge_type = neg_classes[0] * num_classes + neg_classes[1]
-    neg_sample = neg_sample[:, neg_edge_type == edge_type]
-    neg_sample = neg_sample[:, :neg_sample_size]
-    return neg_sample
+    neg_edge_types = get_edge_types(neg_sample[0], neg_sample[1], node_classes)
+    return neg_sample, neg_edge_types
 
 
 if __name__ == "__main__":
@@ -131,24 +138,7 @@ if __name__ == "__main__":
         sparse_sizes=(len(node_classes), len(node_classes)),
     )
 
-    # edge types
-    train_edge_types = (
-        node_classes[train_adj_t.storage.row()] * num_classes
-        + node_classes[train_adj_t.storage.col()]
-    )
-    train_edge_types += torch.logical_and(
-        node_classes[train_adj_t.storage.row()]
-        > node_classes[train_adj_t.storage.col()],
-        train_edge_types == (num_classes + 1),
-    )
-    edge_types = (
-        node_classes[adj_t.storage.row()] * num_classes
-        + node_classes[adj_t.storage.col()]
-    )
-    edge_types += torch.logical_and(
-        node_classes[adj_t.storage.row()] > node_classes[adj_t.storage.col()],
-        edge_types == (num_classes + 1),
-    )
+    edge_types = get_edge_types(edge_index[0], edge_index[1], node_classes)
 
     # train-test split edges
     pos_train = {}
@@ -156,6 +146,10 @@ if __name__ == "__main__":
     pos_test = {}
     neg_test = {}
     neg_val = {}
+
+    all_types_neg, neg_types = neg = neg_sample(
+        edge_index, len(node_classes), node_classes
+    )
     for edge_type in edge_types.unique():
         pos_train[edge_type.item()] = edge_index[
             :, torch.logical_and(edge_dates < args.val_year, edge_types == edge_type),
@@ -172,9 +166,7 @@ if __name__ == "__main__":
         pos_test[edge_type.item()] = edge_index[
             :, torch.logical_and(edge_dates >= args.test_year, edge_types == edge_type),
         ]
-        neg = neg_sample(
-            edge_index, len(node_classes), node_classes, edge_type=edge_type.item()
-        )
+        neg = all_types_neg[:, neg_types == edge_type.item()]
         neg_val[edge_type.item()] = neg[
             :,
             pos_train[edge_type.item()].size(-1) : pos_train[edge_type.item()].size(-1)
@@ -187,6 +179,12 @@ if __name__ == "__main__":
             + pos_val[edge_type.item()].size(-1)
             + pos_test[edge_type.item()].size(-1),
         ]
+
+    # edge types
+    train_edge_types = get_edge_types(
+        train_adj_t.storage.row(), train_adj_t.storage.col(), node_classes
+    )
+    edge_types = get_edge_types(adj_t.storage.row(), adj_t.storage.col(), node_classes)
 
     full_graph = gdata.Data(
         adj_t=adj_t,
@@ -201,7 +199,7 @@ if __name__ == "__main__":
         num_nodes=len(node_classes),
         loss_weights=[
             1 if (x != 1 and x != 3) else args.targetmult
-            for x in range(num_classes ** 2)
+            for x in range(num_classes ** 2 + 1)
         ],
         pos_multiplier=args.posmult,
     )
@@ -263,9 +261,8 @@ if __name__ == "__main__":
             value=torch.ones((edge_dates < args.test_year).sum(), dtype=torch.float),
             sparse_sizes=(len(node_classes), len(node_classes)),
         )
-        val_edge_types = (
-            node_classes[val_adj_t.storage.row()] * num_classes
-            + node_classes[val_adj_t.storage.col()]
+        val_edge_types = get_edge_types(
+            val_adj_t.storage.row(), val_adj_t.storage.col(), node_classes
         )
         model.eval()
         with torch.no_grad():
