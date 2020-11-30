@@ -151,7 +151,7 @@ class CTDEncoder(nn.Module):
         self.conv1 = WRGCNConv(out_channels, in_channels // 2, 3)
         self.conv2 = WRGCNConv(in_channels // 2, in_channels // 2, 3)
         self.conv3 = WRGCNConv(in_channels // 2, out_channels, 3)
-        self.drop = nn.Dropout(0.5)
+        self.drop = nn.Dropout(0.3)
 
     def forward(self, x, adj_t, edge_types):
         """Calculates embeddings"""
@@ -422,7 +422,7 @@ def test(z, decoder, entity_types, pos_edge_index, neg_edge_index):
     return roc_auc_score(y, pred), average_precision_score(y, pred)
 
 
-def drop_edges(mat, p=0.2):
+def drop_edges(mat, p=0.3):
     mask = torch.rand((mat.storage.row().shape[0],)) > p
     matr = torch_sparse.SparseTensor(
         row=mat.storage.row()[mask],
