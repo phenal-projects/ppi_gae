@@ -1,4 +1,5 @@
 import numpy as np
+import torch_sparse
 
 from sim_pu import prob_labels
 
@@ -421,6 +422,17 @@ def test(z, decoder, entity_types, pos_edge_index, neg_edge_index):
     return roc_auc_score(y, pred), average_precision_score(y, pred)
 
 
+def drop_edges(mat, p=0.2):
+    mask = torch.rand((mat.storage.row().shape[0],)) > p
+    matr = torch_sparse.SparseTensor(
+        row=mat.storage.row()[mask],
+        col=mat.storage.col()[mask],
+        value=torch.ones(mask.sum(), dtype=torch.float),
+        sparse_sizes=mat.storage.sparse_sizes(),
+    )
+    return matr, mask
+
+
 def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=None):
     """Trains CTD Graph Autoencoder
 
@@ -456,8 +468,9 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
     for epoch in range(epochs):
         for graph in loader:
 
-            train_pos_adj = graph.train_adj_t.to(device)
-            edge_types = graph.train_edge_types.to(device)
+            train_pos_adj, dropmask = drop_edges(graph.train_adj_t)
+            train_pos_adj = train_pos_adj.to(device)
+            edge_types = graph.train_edge_types[dropmask].to(device)
             x = graph.feats.to(device)
 
             model.train()
