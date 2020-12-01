@@ -198,7 +198,7 @@ if __name__ == "__main__":
         node_classes=node_classes,
         num_nodes=len(node_classes),
         loss_weights=[
-            1 if (x != 1 and x != 3) else args.targetmult
+            1 if (x != 1) and (x != num_classes) else args.targetmult
             for x in range(num_classes ** 2 + 1)
         ],
         pos_multiplier=args.posmult,

@@ -133,7 +133,7 @@ class CTDEncoder(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.dis_emb = nn.parameter.Parameter(
-            torch.rand((num_pathways, out_channels)), requires_grad=True
+            torch.rand((num_dis_nodes, out_channels)), requires_grad=True
         )
         self.comp_emb = nn.parameter.Parameter(
             torch.rand((num_comp_nodes, out_channels)), requires_grad=True
@@ -500,14 +500,13 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
         Trained model
     """
     model.to(device)
-
     losses = []
     aucs = []
     aps = []
 
     for epoch in range(epochs):
         for graph in loader:
-
+            unique_edge_types = graph.train_edge_types.unique()
             train_pos_adj, dropmask = drop_edges(graph.train_adj_t)
             train_pos_adj = train_pos_adj.to(device)
             edge_types = graph.train_edge_types[dropmask].to(device)
@@ -518,14 +517,22 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
             z = model.encode(x, train_pos_adj, edge_types)
 
             loss = 0
-            for edge_type in graph.pos_train:
-                pos_edges = graph.pos_train[edge_type]
+            for edge_type in unique_edge_types:
+                pos_edges = torch.stack(
+                    (
+                        graph.train_adj_t.storage.row()[~dropmask][
+                            graph.train_edge_types[~dropmask] == edge_type
+                        ],
+                        graph.train_adj_t.storage.col()[~dropmask][
+                            graph.train_edge_types[~dropmask] == edge_type
+                        ],
+                    )
+                )
                 if pos_edges.shape[-1] != 0:
                     pos_loss = -torch.log(
-                        model.decoder(z, pos_edges[~dropmask].to(device), edge_type)
-                        + 1e-15
+                        model.decoder(z, pos_edges.to(device), edge_type) + 1e-15
                     ).mean()
-                    neg_edges = pos_edges[~dropmask]
+                    neg_edges = pos_edges
                     neg_edges[1] = torch.randint(graph.num_nodes, (len(pos_edges[0]),))
                     neg_loss = (
                         -0.5
@@ -536,7 +543,7 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
                         ).mean()
                         * 0.5
                     )
-                    neg_edges = pos_edges[~dropmask]
+                    neg_edges = pos_edges
                     neg_edges[0] = torch.randint(graph.num_nodes, (len(pos_edges[0]),))
                     neg_loss = (
                         -0.5
