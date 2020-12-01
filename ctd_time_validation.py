@@ -224,7 +224,11 @@ if __name__ == "__main__":
 
         model = gnn.GAE(
             gae.CTDEncoder(
-                62, args.dim, torch.sum(node_classes == 1), torch.sum(node_classes == 2)
+                62,
+                args.dim,
+                torch.sum(node_classes == 1),
+                torch.sum(node_classes == 2),
+                torch.sum(node_classes == 3),
             ),
             gae.RelDecoder(args.dim, edge_types.max() + 1),
         )

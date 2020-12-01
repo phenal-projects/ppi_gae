@@ -117,7 +117,9 @@ class Encoder(nn.Module):
 
 
 class CTDEncoder(nn.Module):
-    def __init__(self, in_channels, out_channels, num_dis_nodes, num_comp_nodes):
+    def __init__(
+        self, in_channels, out_channels, num_dis_nodes, num_comp_nodes, num_pathways
+    ):
         """Initializes the GCN encoder with encoded embeddings
 
         Parameters
@@ -131,9 +133,12 @@ class CTDEncoder(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.dis_emb = nn.parameter.Parameter(
-            torch.rand((num_dis_nodes, out_channels)), requires_grad=True
+            torch.rand((num_pathways, out_channels)), requires_grad=True
         )
         self.comp_emb = nn.parameter.Parameter(
+            torch.rand((num_comp_nodes, out_channels)), requires_grad=True
+        )
+        self.path_emb = nn.parameter.Parameter(
             torch.rand((num_comp_nodes, out_channels)), requires_grad=True
         )
         self.lin1 = nn.Sequential(nn.Linear(in_channels, out_channels), nn.ReLU())
@@ -143,10 +148,13 @@ class CTDEncoder(nn.Module):
         self.normd2 = nn.BatchNorm1d(in_channels // 2)
         self.normc1 = nn.BatchNorm1d(in_channels // 2)
         self.normc2 = nn.BatchNorm1d(in_channels // 2)
+        self.normp1 = nn.BatchNorm1d(in_channels // 2)
+        self.normp2 = nn.BatchNorm1d(in_channels // 2)
 
         self.normg3 = nn.BatchNorm1d(out_channels)
         self.normd3 = nn.BatchNorm1d(out_channels)
         self.normc3 = nn.BatchNorm1d(out_channels)
+        self.normp3 = nn.BatchNorm1d(out_channels)
 
         self.conv1 = WRGCNConv(out_channels, in_channels // 2, 3)
         self.conv2 = WRGCNConv(in_channels // 2, in_channels // 2, 3)
@@ -158,7 +166,9 @@ class CTDEncoder(nn.Module):
         adj_t = gcn_norm(adj_t, num_nodes=x.size(-2), add_self_loops=False)
         x1 = F.relu(
             self.conv1(
-                torch.cat((self.lin1(x), self.dis_emb, self.comp_emb), 0),
+                torch.cat(
+                    (self.lin1(x), self.dis_emb, self.comp_emb, self.path_emb), 0
+                ),
                 adj_t,
                 edge_types,
             )
@@ -167,7 +177,17 @@ class CTDEncoder(nn.Module):
             (
                 self.normg1(x1[: x.shape[-2]]),
                 self.normd1(x1[x.shape[-2] : x.shape[-2] + self.dis_emb.shape[-2]]),
-                self.normc1(x1[x.shape[-2] + self.dis_emb.shape[-2] :]),
+                self.normc1(
+                    x1[
+                        x.shape[-2]
+                        + self.dis_emb.shape[-2] : x.shape[-2]
+                        + self.dis_emb.shape[-2]
+                        + self.comp_emb.shape[-2]
+                    ]
+                ),
+                self.normp1(
+                    x1[x.shape[-2] + self.dis_emb.shape[-2] + self.comp_emb.shape[-2] :]
+                ),
             ),
             0,
         )
@@ -176,7 +196,17 @@ class CTDEncoder(nn.Module):
             (
                 self.normg2(x2[: x.shape[-2]]),
                 self.normd2(x2[x.shape[-2] : x.shape[-2] + self.dis_emb.shape[-2]]),
-                self.normc2(x2[x.shape[-2] + self.dis_emb.shape[-2] :]),
+                self.normc2(
+                    x2[
+                        x.shape[-2]
+                        + self.dis_emb.shape[-2] : x.shape[-2]
+                        + self.dis_emb.shape[-2]
+                        + self.comp_emb.shape[-2]
+                    ]
+                ),
+                self.normp2(
+                    x2[x.shape[-2] + self.dis_emb.shape[-2] + self.comp_emb.shape[-2] :]
+                ),
             ),
             0,
         )
@@ -185,7 +215,17 @@ class CTDEncoder(nn.Module):
             (
                 self.normg3(x3[: x.shape[-2]]),
                 self.normd3(x3[x.shape[-2] : x.shape[-2] + self.dis_emb.shape[-2]]),
-                self.normc3(x3[x.shape[-2] + self.dis_emb.shape[-2] :]),
+                self.normc3(
+                    x3[
+                        x.shape[-2]
+                        + self.dis_emb.shape[-2] : x.shape[-2]
+                        + self.dis_emb.shape[-2]
+                        + self.comp_emb.shape[-2]
+                    ]
+                ),
+                self.normp3(
+                    x3[x.shape[-2] + self.dis_emb.shape[-2] + self.comp_emb.shape[-2] :]
+                ),
             ),
             0,
         )
@@ -482,9 +522,10 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
                 pos_edges = graph.pos_train[edge_type]
                 if pos_edges.shape[-1] != 0:
                     pos_loss = -torch.log(
-                        model.decoder(z, pos_edges.to(device), edge_type) + 1e-15
+                        model.decoder(z, pos_edges[~dropmask].to(device), edge_type)
+                        + 1e-15
                     ).mean()
-                    neg_edges = pos_edges
+                    neg_edges = pos_edges[~dropmask]
                     neg_edges[1] = torch.randint(graph.num_nodes, (len(pos_edges[0]),))
                     neg_loss = (
                         -0.5
@@ -495,7 +536,7 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
                         ).mean()
                         * 0.5
                     )
-                    neg_edges = pos_edges
+                    neg_edges = pos_edges[~dropmask]
                     neg_edges[0] = torch.randint(graph.num_nodes, (len(pos_edges[0]),))
                     neg_loss = (
                         -0.5
