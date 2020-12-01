@@ -139,7 +139,7 @@ class CTDEncoder(nn.Module):
             torch.rand((num_comp_nodes, out_channels)), requires_grad=True
         )
         self.path_emb = nn.parameter.Parameter(
-            torch.rand((num_comp_nodes, out_channels)), requires_grad=True
+            torch.rand((num_pathways, out_channels)), requires_grad=True
         )
         self.lin1 = nn.Sequential(nn.Linear(in_channels, out_channels), nn.ReLU())
         self.normg1 = nn.BatchNorm1d(in_channels // 2)
