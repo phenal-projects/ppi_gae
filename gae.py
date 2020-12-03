@@ -255,7 +255,10 @@ class RelDecoder(nn.Module):
         )
 
     def forward(self, z, edge_index, rel_id, sigmoid=True):
-        res = ((z[edge_index[0]] * self.rel[rel_id]) * z[edge_index[1]]).sum(dim=1)
+        res = (
+            (F.normalize(z[edge_index[0]]) * F.normalize(self.rel[rel_id], dim=0))
+            * F.normalize(z[edge_index[1]])
+        ).sum(dim=1)
         if not sigmoid:
             return res
         return torch.sigmoid(res)
