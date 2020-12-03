@@ -237,7 +237,7 @@ class RelDecoder(nn.Module):
     def __init__(self, in_channels, rel_types):
         """Initializes the decoder with encoded embeddings (DistMult)
 
-        sigma(Z @ Ri @ Z.T)
+        sigma(Z + Ri - Z)
         Ri = diag(rel[i])
 
         Parameters
@@ -254,14 +254,9 @@ class RelDecoder(nn.Module):
             torch.ones((rel_types, in_channels)), requires_grad=True
         )
 
-    def forward(self, z, edge_index, rel_id, sigmoid=True):
-        res = (
-            (F.normalize(z[edge_index[0]]) * F.normalize(self.rel[rel_id], dim=0))
-            * F.normalize(z[edge_index[1]])
-        ).sum(dim=1)
-        if not sigmoid:
-            return res
-        return torch.sigmoid(res)
+    def forward(self, z, edge_index, rel_id, sigmoid=False):
+        res = torch.norm(z[edge_index[0]] + self.rel[rel_id] - z[edge_index[1]], dim=1)
+        return res
 
 
 class SimpleEncoder(nn.Module):
@@ -456,8 +451,8 @@ def test(z, decoder, entity_types, pos_edge_index, neg_edge_index):
     neg_y = z.new_zeros(neg_edge_index.size(1))
     y = torch.cat([pos_y, neg_y], dim=0)
 
-    pos_pred = decoder(z, pos_edge_index, entity_types, sigmoid=True)
-    neg_pred = decoder(z, neg_edge_index, entity_types, sigmoid=True)
+    pos_pred = decoder(z, pos_edge_index, entity_types)
+    neg_pred = decoder(z, neg_edge_index, entity_types)
     pred = torch.cat([pos_pred, neg_pred], dim=0)
 
     y, pred = y.detach().cpu().numpy(), pred.detach().cpu().numpy()
@@ -532,30 +527,19 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
                     )
                 )
                 if pos_edges.shape[-1] != 0:
-                    pos_loss = -torch.log(
-                        model.decoder(z, pos_edges.to(device), edge_type) + 1e-15
+                    pos_loss = (
+                        model.decoder(z, pos_edges.to(device), edge_type)
                     ).mean()
                     neg_edges = pos_edges
                     neg_edges[1] = torch.randint(graph.num_nodes, (len(pos_edges[0]),))
                     neg_loss = (
-                        -0.5
-                        * torch.log(
-                            1
-                            - model.decoder(z, neg_edges.to(device), edge_type)
-                            + 1e-15
-                        ).mean()
-                        * 0.5
-                    )
+                        -model.decoder(z, neg_edges.to(device), edge_type)
+                    ).mean() * 0.5
                     neg_edges = pos_edges
                     neg_edges[0] = torch.randint(graph.num_nodes, (len(pos_edges[0]),))
                     neg_loss = (
-                        -0.5
-                        * torch.log(
-                            1
-                            - model.decoder(z, neg_edges.to(device), edge_type)
-                            + 1e-15
-                        ).mean()
-                    )
+                        -model.decoder(z, neg_edges.to(device), edge_type)
+                    ).mean() * 0.5
                     loss += graph.loss_weights[edge_type] * (
                         graph.pos_multiplier * pos_loss + neg_loss
                     )
