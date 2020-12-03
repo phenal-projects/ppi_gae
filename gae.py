@@ -541,11 +541,10 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
                             - model.decoder(z, neg_edges.to(device), edge_type)
                             + 1e-15
                         ).mean()
-                        * 0.5
                     )
                     neg_edges = pos_edges
                     neg_edges[0] = torch.randint(graph.num_nodes, (len(pos_edges[0]),))
-                    neg_loss = (
+                    neg_loss += (
                         -0.5
                         * torch.log(
                             1
