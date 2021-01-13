@@ -132,15 +132,6 @@ class CTDEncoder(nn.Module):
         super(CTDEncoder, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.dis_emb = nn.parameter.Parameter(
-            torch.rand((num_dis_nodes, out_channels)), requires_grad=True
-        )
-        self.comp_emb = nn.parameter.Parameter(
-            torch.rand((num_comp_nodes, out_channels)), requires_grad=True
-        )
-        self.path_emb = nn.parameter.Parameter(
-            torch.rand((num_pathways, out_channels)), requires_grad=True
-        )
         self.lin1 = nn.Sequential(nn.Linear(in_channels, out_channels), nn.ReLU())
         self.normg1 = nn.BatchNorm1d(in_channels // 2)
         self.normg2 = nn.BatchNorm1d(in_channels // 2)
@@ -150,7 +141,9 @@ class CTDEncoder(nn.Module):
         self.normc2 = nn.BatchNorm1d(in_channels // 2)
         self.normp1 = nn.BatchNorm1d(in_channels // 2)
         self.normp2 = nn.BatchNorm1d(in_channels // 2)
-
+        self.num_dis_nodes = num_dis_nodes
+        self.num_comp_nodes = num_comp_nodes
+        self.num_pathways = num_pathways
         self.normg3 = nn.BatchNorm1d(out_channels)
         self.normd3 = nn.BatchNorm1d(out_channels)
         self.normc3 = nn.BatchNorm1d(out_channels)
@@ -163,69 +156,58 @@ class CTDEncoder(nn.Module):
 
     def forward(self, x, adj_t, edge_types):
         """Calculates embeddings"""
-        adj_t = gcn_norm(adj_t, num_nodes=x.size(-2), add_self_loops=False)
-        x1 = F.relu(
-            self.conv1(
-                torch.cat(
-                    (self.lin1(x), self.dis_emb, self.comp_emb, self.path_emb), 0
-                ),
-                adj_t,
-                edge_types,
-            )
+        num_genes = (
+            x.shape[-2] - self.num_dis_nodes - self.num_comp_nodes - self.num_pathways
         )
+        adj_t = gcn_norm(adj_t, num_nodes=x.size(-2), add_self_loops=False)
+        x1 = F.relu(self.conv1(self.lin1(x), adj_t, edge_types,))
         x1 = torch.cat(
             (
-                self.normg1(x1[: x.shape[-2]]),
-                self.normd1(x1[x.shape[-2] : x.shape[-2] + self.dis_emb.shape[-2]]),
+                self.normg1(x1[:num_genes]),
+                self.normd1(x1[num_genes : num_genes + self.num_dis_nodes]),
                 self.normc1(
                     x1[
-                        x.shape[-2]
-                        + self.dis_emb.shape[-2] : x.shape[-2]
-                        + self.dis_emb.shape[-2]
-                        + self.comp_emb.shape[-2]
+                        num_genes
+                        + self.num_dis_nodes : num_genes
+                        + self.num_dis_nodes
+                        + self.num_comp_nodes
                     ]
                 ),
-                self.normp1(
-                    x1[x.shape[-2] + self.dis_emb.shape[-2] + self.comp_emb.shape[-2] :]
-                ),
+                self.normp1(x1[num_genes + self.num_dis_nodes + self.num_comp_nodes :]),
             ),
             0,
         )
         x2 = F.relu(self.conv2(x1, adj_t, edge_types))
         x2 = torch.cat(
             (
-                self.normg2(x2[: x.shape[-2]]),
-                self.normd2(x2[x.shape[-2] : x.shape[-2] + self.dis_emb.shape[-2]]),
+                self.normg2(x2[:num_genes]),
+                self.normd2(x2[num_genes : num_genes + self.num_dis_nodes]),
                 self.normc2(
                     x2[
-                        x.shape[-2]
-                        + self.dis_emb.shape[-2] : x.shape[-2]
-                        + self.dis_emb.shape[-2]
-                        + self.comp_emb.shape[-2]
+                        num_genes
+                        + self.num_dis_nodes : num_genes
+                        + self.num_dis_nodes
+                        + self.num_comp_nodes
                     ]
                 ),
-                self.normp2(
-                    x2[x.shape[-2] + self.dis_emb.shape[-2] + self.comp_emb.shape[-2] :]
-                ),
+                self.normp2(x2[num_genes + self.num_dis_nodes + self.num_comp_nodes :]),
             ),
             0,
         )
         x3 = self.conv3(x2, adj_t, edge_types)
         x3 = torch.cat(
             (
-                self.normg3(x3[: x.shape[-2]]),
-                self.normd3(x3[x.shape[-2] : x.shape[-2] + self.dis_emb.shape[-2]]),
+                self.normg3(x3[:num_genes]),
+                self.normd3(x3[num_genes : num_genes + self.num_dis_nodes]),
                 self.normc3(
                     x3[
-                        x.shape[-2]
-                        + self.dis_emb.shape[-2] : x.shape[-2]
-                        + self.dis_emb.shape[-2]
-                        + self.comp_emb.shape[-2]
+                        num_genes
+                        + self.num_dis_nodes : num_genes
+                        + self.num_dis_nodes
+                        + self.num_comp_nodes
                     ]
                 ),
-                self.normp3(
-                    x3[x.shape[-2] + self.dis_emb.shape[-2] + self.comp_emb.shape[-2] :]
-                ),
+                self.normp3(x3[num_genes + self.num_dis_nodes + self.num_comp_nodes :]),
             ),
             0,
         )
@@ -503,7 +485,6 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
     losses = []
     aucs = []
     aps = []
-
     for epoch in range(epochs):
         for graph in loader:
             unique_edge_types = graph.train_edge_types.unique()
@@ -512,12 +493,18 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
             edge_types = graph.train_edge_types[dropmask].to(device)
             x = graph.feats.to(device)
 
+            num_classes = graph.node_classes.max() + 1
             model.train()
             optimizer.zero_grad()
             z = model.encode(x, train_pos_adj, edge_types)
 
             loss = 0
             for edge_type in unique_edge_types:
+                frm = int(edge_type) // num_classes
+                to = int(edge_type) % int(num_classes)
+                if frm >= num_classes or to >= num_classes:
+                    frm = 2
+                    to = 2
                 pos_edges = torch.stack(
                     (
                         graph.train_adj_t.storage.row()[~dropmask][
@@ -533,7 +520,9 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
                         model.decoder(z, pos_edges.to(device), edge_type) + 1e-15
                     ).mean()
                     neg_edges = pos_edges
-                    neg_edges[1] = torch.randint(graph.num_nodes, (len(pos_edges[0]),))
+                    strt = (graph.node_classes < to).sum()
+                    fnsh = strt + (graph.node_classes == to).sum()
+                    neg_edges[1] = torch.randint(strt, fnsh, (len(pos_edges[0]),))
                     neg_loss = (
                         -0.5
                         * torch.log(
@@ -543,7 +532,9 @@ def train_ctd_gae(model, loader, optimizer, scheduler, device, epochs, callback=
                         ).mean()
                     )
                     neg_edges = pos_edges
-                    neg_edges[0] = torch.randint(graph.num_nodes, (len(pos_edges[0]),))
+                    strt = (graph.node_classes < frm).sum()
+                    fnsh = strt + (graph.node_classes == frm).sum()
+                    neg_edges[0] = torch.randint(strt, fnsh, (len(pos_edges[0]),))
                     neg_loss += (
                         -0.5
                         * torch.log(
