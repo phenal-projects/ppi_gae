@@ -71,9 +71,11 @@ class WRGCNConv(gnn.MessagePassing):
         # adj normalization. Does not use edge classes!
         out = x @ self.root + self.bias
         for i in range(self.num_relations):
-            tmp = masked_select_nnz(adj, edge_type == i, layout="coo")
-            h = self.propagate(tmp, x=x, size=(x.size(-2), x.size(-2)))
-            out = out + h @ self.weight[i]
+            mask = edge_type == i
+            if mask.sum() > 0:
+                tmp = masked_select_nnz(adj, mask, layout="coo")
+                h = self.propagate(tmp, x=x, size=(x.size(-2), x.size(-2)))
+                out = out + h @ self.weight[i]
         return out
 
     def message(self, x_j):
