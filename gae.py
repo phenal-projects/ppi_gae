@@ -158,9 +158,9 @@ class CTDEncoder(nn.Module):
         self.normc3 = nn.BatchNorm1d(out_channels)
         self.normp3 = nn.BatchNorm1d(out_channels)
 
-        self.conv1 = WRGCNConv(out_channels, in_channels // 2, 16)
-        self.conv2 = WRGCNConv(in_channels // 2, in_channels // 2, 16)
-        self.conv3 = WRGCNConv(in_channels // 2, out_channels, 16)
+        self.conv1 = WRGCNConv(out_channels, in_channels // 2, 17)
+        self.conv2 = WRGCNConv(in_channels // 2, in_channels // 2, 17)
+        self.conv3 = WRGCNConv(in_channels // 2, out_channels, 17)
         self.drop = nn.Dropout(0.3)
 
     def forward(self, x, adj_t, edge_types):
